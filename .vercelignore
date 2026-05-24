@@ -1,0 +1,8 @@
+.env
+.firebase/
+database/
+*.log
+node_modules/
+dev-server.js
+Clocking System.code-workspace
+Swiftly.code-workspace

@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "clocking-app-d926c"
-  }
+    "default": "clocking-app-d926c",
+    "Shiftly": "shiftly-21919"
+  },
+  "targets": {},
+  "etags": {}
 }

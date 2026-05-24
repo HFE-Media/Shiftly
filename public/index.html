@@ -1,111 +1,2047 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Site Clocking</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Shiftly Workforce</title>
+<meta name="theme-color" content="#0C0C0C"/>
+<link rel="manifest" href="./manifest.json"/>
 
-  <link rel="manifest" href="/manifest.json" />
-  <meta name="theme-color" content="#111111" />
-  <link rel="icon" href="/icons/icon-192.png" />
+<!-- Libraries -->
+<script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
-  <style>
-    body { font-family: Arial, sans-serif; margin: 16px; background:#f6f6f6; }
-    .card { background:#fff; border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 2px 6px rgba(0,0,0,.08); }
-    label { display:block; margin-top:10px; font-weight:600; }
-    input, select, button {
-      width:100%;
-      padding:14px;
-      font-size:16px;
-      border-radius:12px;
-      border:1px solid #ccc;
-      margin-top:8px;
-      box-sizing:border-box;
-    }
-    button { border:none; background:#111; color:#fff; cursor:pointer; }
-    .row { display:flex; gap:10px; margin-top:10px; }
-    .row button { flex:1; }
-    .btnSmall { width:auto; padding:10px 12px; border-radius:10px; border:1px solid #ccc; background:#fff; color:#111; }
-    #reader { width:100%; margin-top:10px; }
-    .ok { color:#0a7; font-weight:bold; }
-    .bad { color:#c00; font-weight:bold; }
-    small { color:#666; display:block; margin-top:8px; line-height:1.3; }
-    .pill { padding:8px 10px; background:#f0f0f0; border-radius:10px; display:inline-block; margin-top:8px; }
-    .muted { color:#777; }
-    .list { margin-top:10px; }
-    .item { display:flex; justify-content:space-between; gap:10px; padding:10px; border:1px solid #eee; border-radius:12px; margin-top:8px; background:#fafafa; align-items:center; }
-    .item b { font-weight:700; }
-    .item small { margin:0; }
-    .debug { margin-top:10px; padding:10px; border-radius:12px; background:#111; color:#fff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; white-space:pre-wrap; }
-  </style>
+<!-- Leaflet (map) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- QR scanner -->
-  <script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+:root{
+  /* Shiftly brand */
+  --bg:#0C0C0C;
+  --bg2:#111111;
+  --card:#0F0F10;
+  --txt:#F3F2EE;
+  --muted:#B7B0A3;
+  --gold:#D4AF37;
+  --gold2:#B8860B;
+  --gold3:#8B6508;
 
-  <!-- Supabase -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  --stroke:rgba(212,175,55,0.16);
+  --stroke2:rgba(212,175,55,0.28);
+  --glow:0 0 0 1px rgba(212,175,55,0.10), 0 10px 30px rgba(0,0,0,0.55);
+
+  --danger:#fca5a5;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  color:var(--txt);
+  font-family:system-ui,Segoe UI,Roboto,Arial;
+  min-height:100vh;
+  background:
+    radial-gradient(900px 520px at 25% 10%, rgba(212,175,55,0.14), transparent 60%),
+    radial-gradient(700px 520px at 80% 35%, rgba(184,134,11,0.10), transparent 55%),
+    radial-gradient(900px 700px at 50% 75%, rgba(0,0,0,0.0), rgba(0,0,0,0.85) 70%),
+    linear-gradient(180deg, var(--bg2), var(--bg));
+}
+
+.authScreen{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  padding:24px 16px;
+}
+.authShell{
+  width:min(440px,100%);
+}
+.brandMark{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:22px;
+}
+.brandBadge{
+  width:48px;
+  height:48px;
+  border-radius:14px;
+  display:grid;
+  place-items:center;
+  color:#140f06;
+  background:linear-gradient(180deg,#F0D77D,#B8860B);
+  box-shadow:0 12px 34px rgba(212,175,55,0.25);
+}
+.brandBadge i{font-size:26px;}
+.brandName{
+  font-size:28px;
+  font-weight:950;
+  letter-spacing:0;
+}
+.brandSub{
+  color:var(--muted);
+  font-size:13px;
+  margin-top:3px;
+}
+.authCard{
+  border:1px solid rgba(212,175,55,0.24);
+  background:rgba(15,15,16,0.84);
+  border-radius:8px;
+  padding:18px;
+  box-shadow:0 22px 70px rgba(0,0,0,0.52), inset 0 1px 0 rgba(255,255,255,0.04);
+  backdrop-filter:blur(18px);
+}
+.authTitle{
+  font-size:18px;
+  font-weight:950;
+}
+.authCopy{
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+  margin-top:6px;
+}
+.fieldStack{display:grid; gap:10px; margin-top:16px;}
+.fieldLabel{
+  display:grid;
+  gap:6px;
+  color:rgba(243,242,238,0.78);
+  font-size:11px;
+  font-weight:850;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.authInput{
+  width:100%;
+  padding:13px 12px;
+  border-radius:8px;
+  border:1px solid rgba(212,175,55,0.20);
+  background:rgba(255,255,255,0.04);
+  color:var(--txt);
+  font-size:14px;
+}
+.authInput:focus{
+  outline:none;
+  border-color:rgba(212,175,55,0.58);
+  box-shadow:0 0 0 3px rgba(212,175,55,0.12);
+}
+.authBtn{
+  width:100%;
+  margin-top:14px;
+  padding:14px;
+  border-radius:8px;
+  border:1px solid rgba(212,175,55,0.42);
+  background:linear-gradient(180deg,#E7C95F 0%,#B8860B 100%);
+  color:#140f06;
+  font-weight:950;
+  cursor:pointer;
+}
+.authBtn:disabled{opacity:.58; cursor:not-allowed;}
+.authLinkBtn{
+  width:100%;
+  margin-top:10px;
+  border:0;
+  background:transparent;
+  color:#f6e7b3;
+  font-size:12px;
+  font-weight:850;
+  cursor:pointer;
+}
+.authError{
+  min-height:18px;
+  margin-top:10px;
+  color:var(--danger);
+  font-size:12px;
+  line-height:1.35;
+}
+.authFoot{
+  margin-top:14px;
+  color:rgba(183,176,163,0.82);
+  font-size:11px;
+  line-height:1.45;
+}
+.appShell[hidden],
+.platformShell[hidden],
+.companyAdminShell[hidden],
+.authScreen[hidden]{display:none !important;}
+[hidden]{display:none !important;}
+
+.wrap{
+  max-width:520px;
+  margin:0 auto;
+  padding-bottom:110px;
+}
+
+.platformShell{
+  min-height:100vh;
+  padding:18px 16px 36px;
+}
+.platformWrap{
+  width:min(1280px,100%);
+  margin:0 auto;
+}
+.platformTop{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:14px;
+  margin-bottom:18px;
+  padding:16px;
+  border:1px solid rgba(212,175,55,0.12);
+  background:rgba(15,15,16,0.46);
+  border-radius:8px;
+}
+.platformBrand{display:flex;align-items:center;gap:12px;}
+.platformBrand .brandBadge{width:40px;height:40px;border-radius:10px;}
+.platformBrand .brandBadge i{font-size:22px;}
+.platformTitle{
+  font-size:22px;
+  font-weight:950;
+}
+.platformSub{
+  margin-top:4px;
+  color:var(--muted);
+  font-size:13px;
+}
+.platformActions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.panelHead .platformActions{
+  gap:6px;
+}
+.platformGrid{
+  display:grid;
+  grid-template-columns:minmax(280px,340px) 1fr;
+  gap:14px;
+  align-items:start;
+}
+.platformGrid > *,
+.platformStack,
+.detailGrid > *,
+.panel{
+  min-width:0;
+}
+.platformStack{
+  display:grid;
+  gap:14px;
+}
+.panel{
+  border:1px solid rgba(212,175,55,0.18);
+  background:rgba(15,15,16,0.78);
+  border-radius:8px;
+  box-shadow:var(--glow);
+  overflow:hidden;
+}
+.panelHead{
+  min-height:58px;
+  padding:12px 14px;
+  border-bottom:1px solid rgba(212,175,55,0.12);
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  align-items:center;
+}
+.panelTitle{
+  font-size:14px;
+  font-weight:950;
+  line-height:1;
+}
+.panelBody{padding:14px;}
+.sectionLabel{
+  margin:0 0 9px;
+  color:rgba(243,242,238,0.72);
+  font-size:10px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.platformForm{
+  display:grid;
+  gap:9px;
+}
+.platformInput,
+.platformSelect{
+  width:100%;
+  padding:11px 10px;
+  border-radius:8px;
+  border:1px solid rgba(212,175,55,0.18);
+  background:rgba(255,255,255,0.04);
+  color:var(--txt);
+  font-size:13px;
+}
+.platformSelect option{background:#111;color:var(--txt);}
+.platformBtn{
+  border:1px solid rgba(212,175,55,0.34);
+  background:linear-gradient(180deg,#E7C95F 0%,#B8860B 100%);
+  color:#140f06;
+  border-radius:8px;
+  padding:11px 12px;
+  font-weight:950;
+  cursor:pointer;
+}
+.platformBtn.secondary{
+  background:rgba(255,255,255,0.035);
+  color:var(--txt);
+}
+.platformBtn.inline{
+  width:auto;
+  white-space:nowrap;
+}
+.platformBtn:disabled{opacity:.55;cursor:not-allowed;}
+.miniIconBtn{
+  width:34px;
+  height:34px;
+  border-radius:8px;
+  border:1px solid rgba(212,175,55,0.28);
+  background:rgba(255,255,255,0.035);
+  color:var(--txt);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.miniIconBtn i{font-size:18px;}
+.miniIconBtn.active{
+  background:rgba(212,175,55,0.14);
+  color:#f6e7b3;
+}
+.inlineHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:10px;
+}
+.companyProfileHead{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
+.companyLogoMark{
+  width:48px;
+  height:48px;
+  border-radius:10px;
+  border:1px solid rgba(212,175,55,0.24);
+  background:rgba(255,255,255,0.035);
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  color:rgba(243,242,238,0.74);
+  flex:0 0 auto;
+}
+.companyLogoMark img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  background:rgba(255,255,255,0.04);
+}
+.companyLogoMark i{font-size:20px;}
+.hiddenFileInput{
+  position:absolute;
+  width:1px;
+  height:1px;
+  opacity:0;
+  pointer-events:none;
+}
+.collapseBox[hidden]{display:none !important;}
+.companyList{
+  display:grid;
+  gap:8px;
+  max-height:560px;
+  overflow:auto;
+}
+.companyCard{
+  width:100%;
+  text-align:left;
+  border:1px solid rgba(212,175,55,0.14);
+  background:rgba(255,255,255,0.03);
+  color:var(--txt);
+  border-radius:8px;
+  padding:11px;
+  cursor:pointer;
+}
+.companyCard.active{
+  border-color:rgba(212,175,55,0.46);
+  background:rgba(212,175,55,0.10);
+}
+.companyCard b{
+  display:block;
+  font-size:13px;
+  margin-bottom:4px;
+  overflow-wrap:anywhere;
+}
+.companyCard span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  font-variant:small-caps;
+  text-transform:lowercase;
+  letter-spacing:.04em;
+  overflow-wrap:anywhere;
+}
+.statGrid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
+.stat{
+  border:1px solid rgba(212,175,55,0.14);
+  background:rgba(255,255,255,0.03);
+  border-radius:8px;
+  padding:12px;
+}
+.stat b{
+  display:block;
+  font-size:22px;
+}
+.stat span{
+  color:var(--muted);
+  font-size:11px;
+}
+.detailGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:14px;
+  border-top:1px solid rgba(212,175,55,0.10);
+}
+.emptyState{
+  padding:13px;
+  border:1px solid rgba(212,175,55,0.10);
+  background:rgba(255,255,255,0.025);
+  border-radius:8px;
+  color:var(--muted);
+  font-size:12px;
+}
+.dataTable{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px;
+  table-layout:fixed;
+}
+.dataTable th,
+.dataTable td{
+  padding:9px 8px;
+  border-bottom:1px solid rgba(212,175,55,0.10);
+  text-align:left;
+  vertical-align:top;
+  overflow-wrap:anywhere;
+}
+.dataTable th{
+  color:rgba(243,242,238,0.72);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
+.dataTable.eventsTable{
+  min-width:0;
+}
+.dataTable.eventsTable th,
+.dataTable.eventsTable td{
+  padding-left:4px;
+  padding-right:4px;
+}
+.dataTable.eventsTable th:nth-child(1),
+.dataTable.eventsTable td:nth-child(1){width:24%;}
+.dataTable.eventsTable th:nth-child(2),
+.dataTable.eventsTable td:nth-child(2){width:24%;}
+.dataTable.eventsTable th:nth-child(3),
+.dataTable.eventsTable td:nth-child(3){width:17%;}
+.dataTable.eventsTable th:nth-child(4),
+.dataTable.eventsTable td:nth-child(4){width:13%;}
+.dataTable.eventsTable th:nth-child(5),
+.dataTable.eventsTable td:nth-child(5){width:22%;}
+.dataTable.eventsTable th{
+  white-space:nowrap;
+}
+.payrollFilters{
+  display:grid;
+  grid-template-columns:1fr 1fr auto;
+  gap:9px;
+  margin-bottom:12px;
+}
+.payrollTable th:nth-child(1),
+.payrollTable td:nth-child(1){width:38%;}
+.payrollTable th:nth-child(2),
+.payrollTable td:nth-child(2){width:18%;}
+.payrollTable th:nth-child(3),
+.payrollTable td:nth-child(3){width:22%;}
+.payrollTable th:nth-child(4),
+.payrollTable td:nth-child(4){width:22%;}
+.payrollTable td:nth-child(2),
+.payrollTable td:nth-child(3),
+.payrollTable td:nth-child(4){
+  font-weight:900;
+}
+.payrollTable .mutedText{
+  font-size:11px;
+  line-height:1.2;
+}
+.payrollHoursBtn{
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--txt);
+  font:inherit;
+  font-weight:950;
+  cursor:pointer;
+  text-align:left;
+  text-decoration:underline;
+  text-decoration-color:rgba(212,175,55,0.45);
+  text-underline-offset:3px;
+}
+.breakdownGrid{
+  display:grid;
+  gap:9px;
+  margin:14px 0;
+}
+.breakdownRow{
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  gap:10px;
+  align-items:center;
+  border:1px solid rgba(212,175,55,0.12);
+  background:rgba(255,255,255,0.025);
+  border-radius:8px;
+  padding:10px;
+}
+.breakdownRow b{font-size:13px;}
+.breakdownRow span{
+  color:var(--muted);
+  font-size:12px;
+}
+.breakdownRow strong{
+  font-size:13px;
+  text-align:right;
+}
+.breakdownRow.total{
+  border-color:rgba(212,175,55,0.34);
+  background:rgba(212,175,55,0.08);
+}
+.employeeInfoGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+  margin:0 0 12px;
+}
+.employeeInfoTile{
+  border:1px solid rgba(212,175,55,0.12);
+  background:rgba(255,255,255,0.025);
+  border-radius:8px;
+  padding:10px;
+}
+.employeeInfoTile span{
+  display:block;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:4px;
+}
+.employeeInfoTile b{
+  font-size:13px;
+  line-height:1.25;
+}
+@media (max-width:460px){
+  .employeeInfoGrid{grid-template-columns:1fr;}
+}
+.detailToggle{
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--txt);
+  font:inherit;
+  font-weight:900;
+  cursor:pointer;
+  text-align:left;
+}
+.detailToggle.resultOk{color:#d9f99d;}
+.detailToggle.resultBlocked{color:#fca5a5;}
+.timeEditBtn{
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--txt);
+  font:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.timeEditBtn .mutedText{
+  display:block;
+}
+.timeEditBtn:active{
+  transform:scale(0.99);
+}
+.cellDetail{
+  display:none;
+  margin-top:4px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.25;
+}
+.cellDetail.show{display:block;}
+.dataTable.usersTable th:nth-child(1),
+.dataTable.usersTable td:nth-child(1){
+  width:32%;
+}
+.dataTable.usersTable th:nth-child(2),
+.dataTable.usersTable td:nth-child(2){
+  width:48%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.dataTable.usersTable th:nth-child(3),
+.dataTable.usersTable td:nth-child(3){
+  width:20%;
+}
+.tableScroll{
+  overflow:auto;
+  width:100%;
+  max-width:100%;
+  max-height:260px;
+  -webkit-overflow-scrolling:touch;
+}
+.tableScroll.compact{
+  max-height:220px;
+}
+.tableScroll.tall{
+  max-height:340px;
+}
+.adminTools{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+}
+.adminTools .panelBody{
+  display:grid;
+  gap:12px;
+}
+.compactList{
+  display:grid;
+  gap:8px;
+  max-height:260px;
+  overflow:auto;
+}
+.compactItem{
+  border:1px solid rgba(212,175,55,0.12);
+  background:rgba(255,255,255,0.025);
+  border-radius:8px;
+  padding:10px;
+  font-size:12px;
+}
+.compactItem.clickable{
+  cursor:pointer;
+}
+.compactItem.clickable:active{
+  transform:scale(0.995);
+}
+.compactItemTop{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:10px;
+}
+.itemActions{
+  display:flex;
+  gap:6px;
+  flex:0 0 auto;
+}
+.compactItem b{
+  display:block;
+  font-size:13px;
+  margin-bottom:3px;
+  min-width:0;
+  overflow-wrap:anywhere;
+}
+.compactItem span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.35;
+}
+.itemEditBtn{
+  width:30px;
+  height:30px;
+  flex:0 0 auto;
+  border-radius:8px;
+  border:1px solid rgba(212,175,55,0.20);
+  background:rgba(255,255,255,0.03);
+  color:var(--txt);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.itemEditBtn i{font-size:16px;}
+.itemEditBtn.inactive{
+  color:#fca5a5;
+  border-color:rgba(252,165,165,0.28);
+}
+.itemEditBtn.activeToggle{
+  color:#d9f99d;
+  border-color:rgba(217,249,157,0.22);
+}
+.qrModalCard{
+  width:min(380px, 100%);
+  text-align:center;
+}
+.qrEmployeeName{
+  margin-top:4px;
+  font-size:18px;
+  font-weight:950;
+}
+.qrEmployeeId{
+  margin:6px auto 12px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid rgba(212,175,55,0.22);
+  border-radius:999px;
+  padding:5px 12px;
+  color:#f6e7b3;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.qrBox{
+  width:244px;
+  height:244px;
+  margin:0 auto;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  background:#fff;
+  padding:12px;
+  box-shadow:0 18px 42px rgba(0,0,0,0.42);
+}
+.qrBox canvas,
+.qrBox img{
+  width:220px !important;
+  height:220px !important;
+}
+.qrHint{
+  margin-top:12px;
+  color:var(--muted);
+  font-size:12px;
+}
+.eventEditMeta{
+  display:grid;
+  gap:6px;
+  margin:12px 0;
+  padding:10px;
+  border:1px solid rgba(212,175,55,0.12);
+  border-radius:8px;
+  background:rgba(255,255,255,0.025);
+  color:var(--muted);
+  font-size:12px;
+}
+.eventEditMeta b{
+  color:var(--txt);
+}
+.mutedText{
+  color:var(--muted);
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
+.statusPill{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid rgba(212,175,55,0.16);
+  border-radius:999px;
+  padding:3px 8px;
+  color:var(--muted);
+  font-size:11px;
+  font-variant:small-caps;
+  text-transform:lowercase;
+  letter-spacing:.04em;
+}
+.companyCountPill{
+  min-width:26px;
+  height:26px;
+  padding:0 8px;
+  border-color:rgba(212,175,55,0.22);
+  background:rgba(255,255,255,0.015);
+  font-size:13px;
+  color:rgba(243,242,238,0.82);
+  font-variant:normal;
+  text-transform:none;
+  letter-spacing:0;
+}
+
+@media (max-width:860px){
+  .platformShell{padding:12px 10px 30px; overflow-x:hidden;}
+  .platformTop{padding:12px; align-items:flex-start; flex-direction:row;}
+  .platformBrand{align-items:flex-start;}
+  .platformTitle{font-size:20px; line-height:1.08;}
+  .platformSub{font-size:12px; line-height:1.28;}
+  .platformGrid{grid-template-columns:1fr;}
+  .adminTools{grid-template-columns:1fr;}
+  .detailGrid{grid-template-columns:1fr;}
+  .statGrid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .platformActions{justify-content:flex-end; flex:0 0 auto;}
+  .panelHead{align-items:center;}
+  .dataTable th,
+  .dataTable td{padding:8px 6px;}
+  .dataTable.eventsTable th,
+  .dataTable.eventsTable td{padding:7px 3px;}
+  .dataTable{font-size:11px;}
+  .payrollFilters{grid-template-columns:1fr 1fr;}
+  .payrollFilters .platformBtn{grid-column:1 / -1;}
+  .tableScroll.compact{max-height:230px;}
+}
+
+/* HEADER */
+.header{ padding:20px 16px 10px; }
+.headerTop{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+}
+.title{ font-size:22px; font-weight:900; }
+.subtitle{ font-size:12px; color:var(--muted); margin-top:4px; }
+
+.accountLine{
+  margin-top:7px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  color:rgba(183,176,163,0.86);
+  font-size:11px;
+}
+.companyDot{
+  width:5px;
+  height:5px;
+  border-radius:999px;
+  background:rgba(212,175,55,0.78);
+  box-shadow:0 0 10px rgba(212,175,55,0.42);
+  flex:0 0 auto;
+}
+.accountLine b{
+  color:rgba(243,242,238,0.92);
+  font-size:11px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:160px;
+}
+.accountLine small{
+  color:rgba(183,176,163,0.74);
+  font-size:11px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:190px;
+}
+.headerActions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex:0 0 auto;
+}
+.companySelect{
+  width:auto;
+  max-width:130px;
+  padding:3px 6px;
+  border-radius:6px;
+  border:1px solid rgba(212,175,55,0.18);
+  background:rgba(255,255,255,0.025);
+  color:rgba(243,242,238,0.86);
+  font-size:11px;
+  box-shadow:none;
+}
+.iconBtn{
+  width:36px;
+  height:36px;
+  border-radius:10px;
+  border:1px solid rgba(212,175,55,0.22);
+  background:rgba(255,255,255,0.03);
+  color:var(--txt);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.iconBtn i{font-size:18px;}
+
+/* Supervisor pill */
+.supTop{ width:120px; }
+.supInput{
+  width:100%;
+  padding:10px 12px;
+  border-radius:999px;
+  border:1px solid var(--stroke2);
+  background: rgba(255,255,255,0.03);
+  color: var(--txt);
+  font-weight:900;
+  font-size:13px;
+  text-align:center;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  box-shadow: var(--glow);
+}
+.supInput::placeholder{ color: rgba(183,176,163,0.7); }
+.supInput:focus{
+  outline:none;
+  border-color: rgba(212,175,55,0.55);
+  box-shadow: 0 0 0 3px rgba(212,175,55,0.12), var(--glow);
+}
+
+@media (max-width:420px){
+  .header{ padding:18px 12px 10px; }
+  .headerTop{
+    justify-content:flex-start;
+    gap:8px;
+  }
+  .headerTop > div:first-child{
+    flex:0 1 170px;
+    min-width:0;
+    max-width:170px;
+  }
+  .title{ font-size:19px; line-height:1.08; }
+  .subtitle{ max-width:170px; line-height:1.25; }
+  .accountLine{ max-width:170px; }
+  .accountLine b{ max-width:86px; }
+  .accountLine small{ max-width:72px; }
+  .headerActions{
+    gap:6px;
+    flex:0 0 auto;
+    margin-left:auto;
+  }
+  .supTop{ width:86px; }
+  .headerActions:has(#btnBackToCompanyDashboard[hidden]):has(#btnOpenEmployeeDashboard[hidden]) .supTop{ width:120px; }
+  .supInput{
+    padding:10px 8px;
+    font-size:12px;
+    letter-spacing:.10em;
+  }
+  .iconBtn{
+    width:34px;
+    height:34px;
+    border-radius:9px;
+  }
+  .iconBtn i{font-size:18px;}
+}
+
+/* Segmented */
+.segWrap{ display:flex; justify-content:center; margin-top:18px; }
+.seg{
+  display:flex;
+  border-radius:999px;
+  border:1px solid var(--stroke2);
+  background: rgba(255,255,255,0.02);
+  overflow:hidden;
+  box-shadow: var(--glow);
+}
+.seg button{
+  padding:11px 18px;
+  background:transparent;
+  border:0;
+  color:var(--txt);
+  font-weight:900;
+  cursor:pointer;
+}
+.seg button.active{
+  background: linear-gradient(180deg, rgba(212,175,55,0.95), rgba(184,134,11,0.92));
+  color:#140f06;
+}
+
+/* Site Button */
+.siteBtn{
+  width:100%;
+  margin-top:14px;
+  padding:14px;
+  border-radius:18px;
+  border:1px solid var(--stroke2);
+  background: rgba(255,255,255,0.03);
+  color:var(--txt);
+  font-weight:900;
+  font-size:14px;
+  text-align:left;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+  cursor:pointer;
+  box-shadow: var(--glow);
+}
+.siteBtn small{
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:2px;
+}
+
+/* Site picker */
+.pickerPanel{ margin-top:10px; display:none; }
+.pickerPanel.show{ display:block; }
+select{
+  width:100%;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid var(--stroke);
+  background: rgba(255,255,255,0.03);
+  color:var(--txt);
+  box-shadow: var(--glow);
+}
+
+/* ADMIN PANEL (hidden until admin code valid) */
+.adminPanel{
+  margin-top:10px;
+  padding:12px;
+  border-radius:16px;
+  border:1px solid rgba(212,175,55,0.18);
+  background: rgba(255,255,255,0.02);
+  box-shadow: var(--glow);
+  display:none;
+}
+.adminPanel.show{ display:block; }
+.adminRow{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.adminHint{
+  color: var(--muted);
+  font-size:11px;
+  line-height:1.35;
+}
+.adminBtn{
+  flex:0 0 auto;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(212,175,55,0.35);
+  background: linear-gradient(180deg, rgba(212,175,55,0.90), rgba(184,134,11,0.86));
+  color:#140f06;
+  font-weight:900;
+  cursor:pointer;
+}
+.adminBtn i{ font-size:18px; }
+
+/* CAMERA */
+.camCard{
+  width:calc(100% - 32px);
+  margin:16px;
+  aspect-ratio:1/1;
+  border-radius:20px;
+  overflow:hidden;
+  border:1px solid var(--stroke2);
+  position:relative;
+  background:#000;
+  box-shadow: var(--glow);
+}
+#reader{ width:100%; height:100%; }
+.camFrame{ position:absolute; inset:0; border:1px solid rgba(212,175,55,0.18); }
+.camBadge{
+  position:absolute; left:14px; top:14px;
+  background: rgba(0,0,0,0.55);
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(212,175,55,0.22);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+}
+.camBadge b{ font-size:12px; }
+.camBadge small{ display:block; font-size:11px; margin-top:2px; color:var(--muted); }
+
+/* Subtle scan overlay */
+.scanBox{
+  position:absolute;
+  left:50%; top:50%;
+  width:72%;
+  aspect-ratio:1/1;
+  transform:translate(-50%,-50%);
+  border-radius:18px;
+  border:1px solid rgba(212,175,55,0.38);
+  box-shadow: 0 0 0 999px rgba(0,0,0,0.22) inset, 0 0 35px rgba(212,175,55,0.08);
+  pointer-events:none;
+}
+
+/* Queue */
+.queue{ padding:0 16px 96px; }
+.queueHead{ display:flex; justify-content:space-between; align-items:center; }
+.queueHead h3{ font-size:16px; font-weight:900; }
+
+.clearBtn{
+  border:1px solid var(--stroke2);
+  background: rgba(255,255,255,0.02);
+  color:var(--txt);
+  padding:8px 12px;
+  border-radius:12px;
+  font-weight:900;
+  box-shadow: var(--glow);
+}
+.clearBtn:disabled{ opacity:.5; }
+
+.item{
+  background: rgba(18,18,18,0.65);
+  border: 1px solid rgba(212,175,55,0.14);
+  border-radius:16px;
+  padding:14px;
+  margin-top:10px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.28);
+}
+.item.removing{ opacity:0; transform: translateX(12px); }
+
+.empInfo{ min-width:0; }
+.empLine{ display:flex; align-items:center; gap:10px; min-width:0; }
+.empId{
+  display:inline-flex; align-items:center;
+  padding:6px 10px;
+  border-radius:999px;
+  background: rgba(212,175,55,0.12);
+  border: 1px solid rgba(212,175,55,0.26);
+  color: #f6e7b3;
+  font-weight:900;
+  font-size:12px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  flex: 0 0 auto;
+}
+.empName{
+  font-size:13px;
+  font-weight:800;
+  color: rgba(255,255,255,0.92);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  min-width:0;
+}
+.empMeta{ margin-top:6px; display:flex; gap:8px; align-items:center; }
+.readyChip{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 10px;
+  border-radius:999px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  color: rgba(226,232,240,0.72);
+  font-size:11px;
+  font-weight:700;
+}
+.readyDot{
+  width:6px; height:6px; border-radius:999px;
+  background: rgba(212,175,55,0.75);
+  box-shadow: 0 0 10px rgba(212,175,55,0.35);
+}
+.removeBtn{
+  width:38px;
+  height:38px;
+  border-radius:12px;
+  border:1px solid rgba(252,165,165,0.30);
+  background: rgba(252,165,165,0.08);
+  color: var(--danger);
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  -webkit-tap-highlight-color: transparent;
+  transition: all .12s ease;
+}
+.removeBtn i{ font-size:18px; line-height:1; }
+.removeBtn:hover{ background: rgba(252,165,165,0.14); border-color: rgba(252,165,165,0.50); }
+.removeBtn:active{ transform: scale(0.95); }
+
+/* Sticky */
+.sticky{
+  position:fixed;
+  bottom:0; left:0; right:0;
+  padding:16px;
+  border-top:1px solid rgba(212,175,55,0.16);
+  background: rgba(12,12,12,0.92);
+  backdrop-filter: blur(10px);
+}
+.stickyInner{ max-width:520px; margin:0 auto; }
+.submitBtn{
+  width:100%;
+  padding:15px;
+  border-radius:18px;
+  border:1px solid rgba(212,175,55,0.35);
+  font-weight:900;
+  font-size:14px;
+  letter-spacing:.03em;
+  transition: all .18s ease;
+  position:relative;
+  overflow:hidden;
+}
+.submitBtn:disabled{
+  background: rgba(255,255,255,0.06);
+  color: rgba(243,242,238,0.55);
+  border-color: rgba(255,255,255,0.08);
+  box-shadow:none;
+}
+.submitBtn:not(:disabled){
+  background: linear-gradient(180deg, #D4AF37 0%, #C59B1D 40%, #B8860B 100%);
+  color:#140f06;
+  box-shadow: 0 6px 18px rgba(212,175,55,0.35), 0 0 0 1px rgba(255,215,120,0.25) inset;
+}
+.submitBtn:not(:disabled):active{
+  transform: translateY(2px);
+  box-shadow: 0 3px 10px rgba(212,175,55,0.25), 0 0 0 1px rgba(255,215,120,0.2) inset;
+}
+.footHint{ font-size:11px; color: var(--muted); text-align:center; margin-top:8px; }
+
+/* Modal */
+.modal{
+  position:fixed;
+  inset:0;
+  background: rgba(0,0,0,0.55);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  z-index:9999;
+}
+.modal.show{ display:flex; }
+.modalCard{
+  width:min(520px, 100%);
+  background: rgba(15,15,16,0.96);
+  border:1px solid rgba(212,175,55,0.22);
+  border-radius:18px;
+  padding:14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.65);
+}
+.modalSheet{
+  position:relative;
+  padding:18px;
+}
+.modalCloseIcon{
+  position:absolute;
+  top:10px;
+  right:10px;
+  width:34px;
+  height:34px;
+  border-radius:8px;
+  border:1px solid rgba(212,175,55,0.22);
+  background:rgba(255,255,255,0.035);
+  color:var(--txt);
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.modalCloseIcon i{font-size:18px;}
+.payslipSheetForm{
+  margin-top:18px;
+  gap:12px;
+}
+.modalTitle{
+  font-weight:900;
+  font-size:16px;
+}
+.modalSub{
+  margin-top:6px;
+  color: var(--muted);
+  font-size:12px;
+}
+.formGrid{
+  display:grid;
+  grid-template-columns: 1fr 120px;
+  gap:10px;
+  margin-top:12px;
+}
+.input{
+  width:100%;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid rgba(212,175,55,0.18);
+  background: rgba(255,255,255,0.03);
+  color: var(--txt);
+  font-weight:800;
+}
+.input:focus{
+  outline:none;
+  border-color: rgba(212,175,55,0.55);
+  box-shadow: 0 0 0 3px rgba(212,175,55,0.12);
+}
+#map{
+  margin-top:10px;
+  height:260px;
+  border-radius:16px;
+  border:1px solid rgba(212,175,55,0.18);
+  overflow:hidden;
+}
+.modalActions{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:12px;
+}
+.btnGhost{
+  flex:1;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  color: var(--txt);
+  font-weight:900;
+  cursor:pointer;
+}
+.btnPrimary{
+  flex:1;
+  padding:12px;
+  border-radius:14px;
+  border:1px solid rgba(212,175,55,0.35);
+  background: linear-gradient(180deg, #D4AF37 0%, #B8860B 100%);
+  color:#140f06;
+  font-weight:900;
+  cursor:pointer;
+}
+.btnPrimary:disabled{ opacity:.5; cursor:not-allowed; }
+
+@media (max-width:520px){
+  .modal.sheetModal{
+    align-items:flex-end;
+    padding:0;
+    background:rgba(0,0,0,0.72);
+  }
+  .modal.sheetModal .modalCard{
+    width:100%;
+    border-radius:20px 20px 0 0;
+    border-left:0;
+    border-right:0;
+    border-bottom:0;
+    padding:20px 16px 18px;
+  }
+}
+
+/* Hide html5-qrcode overlays (keep video) */
+#reader__scan_region canvas,
+#reader__scan_region img,
+#reader__scan_region svg { display:none !important; visibility:hidden !important; opacity:0 !important; }
+#reader__scan_region video{
+  display:block !important;
+  width:100% !important;
+  height:100% !important;
+  object-fit:cover !important;
+}
+#reader__scan_region > *{ display:none !important; }
+#reader__scan_region > video{ display:block !important; }
+</style>
 </head>
 
 <body>
-  <div class="card">
-    <h2>Site Clocking</h2>
-
-    <label for="siteSelect">Choose Site</label>
-    <select id="siteSelect">
-      <option value="">Loading sites…</option>
-    </select>
-
-    <label for="supCode">Supervisor Code</label>
-    <input id="supCode" placeholder="Supervisor code" />
-
-    <small class="muted">
-      Must be physically on the selected site to clock IN/OUT. Location must be ON.
-    </small>
-  </div>
-
-  <div class="card">
-    <h3>Scan Employees (build a list)</h3>
-    <div class="pill">Rear camera will be used automatically (with fallbacks)</div>
-
-    <div class="row">
-      <button onclick="startScanning()">Start Scan</button>
-      <button class="btnSmall" onclick="stopScanning()">Stop</button>
+<section class="authScreen" id="authScreen">
+  <div class="authShell">
+    <div class="brandMark">
+      <div class="brandBadge"><i class="ph ph-fingerprint"></i></div>
+      <div>
+        <div class="brandName">Shiftly</div>
+        <div class="brandSub">Premium workforce clocking for multi-site teams.</div>
+      </div>
     </div>
 
+    <form class="authCard" id="loginForm">
+      <div class="authTitle">Sign in to your company workspace</div>
+      <div class="authCopy">Each company gets its own sites, employees, supervisors, and clocking history.</div>
+
+      <div class="fieldStack">
+        <label class="fieldLabel">
+          Email
+          <input id="loginEmail" class="authInput" type="email" autocomplete="email" placeholder="you@company.com" required/>
+        </label>
+        <label class="fieldLabel">
+          Password
+          <input id="loginPassword" class="authInput" type="password" autocomplete="current-password" placeholder="Password" required/>
+        </label>
+      </div>
+
+      <button id="btnLogin" class="authBtn" type="submit">Sign in</button>
+      <button id="btnResetPassword" class="authLinkBtn" type="button">Set or reset password</button>
+      <div id="authError" class="authError" role="alert"></div>
+      <div class="authFoot">Access is controlled by Supabase Auth and company memberships. Invite users from the database or admin tooling.</div>
+    </form>
+
+    <form class="authCard" id="passwordSetupForm" hidden>
+      <div class="authTitle">Set your password</div>
+      <div class="authCopy">Create a password for your Shiftly login. You will use this with your email next time.</div>
+
+      <div class="fieldStack">
+        <label class="fieldLabel">
+          New password
+          <input id="newPassword" class="authInput" type="password" autocomplete="new-password" placeholder="New password" minlength="8" required/>
+        </label>
+        <label class="fieldLabel">
+          Confirm password
+          <input id="confirmPassword" class="authInput" type="password" autocomplete="new-password" placeholder="Confirm password" minlength="8" required/>
+        </label>
+      </div>
+
+      <button id="btnSetPassword" class="authBtn" type="submit">Set Password</button>
+      <div id="passwordSetupError" class="authError" role="alert"></div>
+      <div class="authFoot">After this, your invite is complete and you can sign in normally.</div>
+    </form>
+  </div>
+</section>
+
+<main class="platformShell" id="platformShell" hidden>
+  <div class="platformWrap">
+    <div class="platformTop">
+      <div>
+        <div class="platformBrand">
+          <div class="brandBadge"><i class="ph ph-crown"></i></div>
+          <div>
+  <div class="platformTitle">Platform Dashboard</div>
+            <div class="platformSub">Manage Shiftly companies.</div>
+            <div class="mutedText" id="platformUserLabel">Signed in</div>
+          </div>
+        </div>
+      </div>
+      <div class="platformActions">
+        <button id="btnPlatformLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
+          <i class="ph ph-sign-out"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="platformGrid">
+      <div class="panel">
+        <div class="panelHead">
+          <div class="panelTitle">Companies</div>
+          <div class="platformActions">
+            <span class="statusPill companyCountPill" id="platformCompanyCount">0</span>
+            <button id="btnToggleCompanyForm" class="miniIconBtn" type="button" title="Add company" aria-label="Add company">
+              <i class="ph ph-plus"></i>
+            </button>
+          </div>
+        </div>
+        <div class="panelBody">
+          <div id="companyFormBox" class="collapseBox" hidden>
+            <form class="platformForm" id="newCompanyForm" style="margin-bottom:14px;">
+              <input id="newCompanyName" class="platformInput" placeholder="Company name" autocomplete="off"/>
+              <select id="newCompanyPlan" class="platformSelect">
+                <option value="premium">Premium</option>
+                <option value="standard">Standard</option>
+              </select>
+              <button id="btnCreateCompany" class="platformBtn" type="submit">Create Company</button>
+            </form>
+          </div>
+          <div id="platformCompanyList" class="companyList"></div>
+        </div>
+      </div>
+
+      <div class="platformStack">
+        <div class="panel">
+          <div class="panelHead">
+            <div>
+              <div class="panelTitle" id="platformDetailTitle">Select a company</div>
+              <div class="mutedText" id="platformDetailSub">Company totals and recent activity will appear here.</div>
+            </div>
+            <span class="statusPill" id="platformDetailStatus">-</span>
+          </div>
+          <div class="panelBody">
+            <div class="statGrid">
+              <div class="stat"><b id="statUsers">0</b><span>Users</span></div>
+              <div class="stat"><b id="statEmployees">0</b><span>Employees</span></div>
+              <div class="stat"><b id="statSites">0</b><span>Sites</span></div>
+              <div class="stat"><b id="statEvents">0</b><span>Clock Events</span></div>
+            </div>
+          </div>
+          <div class="panelBody" style="border-top:1px solid rgba(212,175,55,0.10);">
+            <div class="inlineHead">
+              <div class="sectionLabel" style="margin:0;">Company Users</div>
+              <button id="btnToggleCompanyUserForm" class="miniIconBtn" type="button" title="Add company user" aria-label="Add company user">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+            <div id="companyUserFormBox" class="collapseBox" hidden>
+              <form class="platformForm" id="companyUserForm" style="margin-bottom:14px;">
+                <input id="companyUserEmail" class="platformInput" type="email" placeholder="Email" autocomplete="off"/>
+                <input id="companyUserFullName" class="platformInput" placeholder="Full name" autocomplete="off"/>
+                <input id="companyUserEmployeeId" class="platformInput" placeholder="Employee ID optional e.g. E011" autocomplete="off"/>
+                <select id="companyUserRole" class="platformSelect">
+                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
+                  <option value="supervisor">Supervisor</option>
+                  <option value="employee">Employee</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <button id="btnAddCompanyUser" class="platformBtn" type="submit">Invite User To Company</button>
+              </form>
+            </div>
+            <div class="tableScroll compact">
+              <table class="dataTable usersTable">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                  </tr>
+                </thead>
+                <tbody id="platformUsersBody">
+                  <tr><td colspan="3" class="mutedText">No company selected.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">Recent Clock Events</div>
+            <span class="statusPill">scroll all</span>
+          </div>
+          <div class="panelBody">
+            <div class="tableScroll compact">
+              <table class="dataTable eventsTable">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Employee</th>
+                    <th>Action</th>
+                    <th>Site</th>
+                    <th>Result</th>
+                  </tr>
+                </thead>
+                <tbody id="platformEventsBody">
+                  <tr><td colspan="5" class="mutedText">No company selected.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<main class="platformShell companyAdminShell" id="companyAdminShell" hidden>
+  <div class="platformWrap">
+    <div class="platformTop">
+      <div>
+        <div class="platformBrand">
+          <div class="brandBadge"><i class="ph ph-buildings"></i></div>
+          <div>
+            <div class="platformTitle">Company Dashboard</div>
+            <div class="platformSub">Manage your company setup.</div>
+            <div class="mutedText" id="companyAdminUserLabel">Signed in</div>
+          </div>
+        </div>
+      </div>
+      <div class="platformActions">
+        <button id="btnCompanyAdminEmployeeDashboard" class="miniIconBtn" type="button" title="My dashboard" aria-label="My dashboard" hidden>
+          <i class="ph ph-user"></i>
+        </button>
+        <button id="btnOpenClocking" class="miniIconBtn" type="button" title="Open clocking" aria-label="Open clocking">
+          <i class="ph ph-fingerprint"></i>
+        </button>
+        <button id="btnCompanyAdminLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
+          <i class="ph ph-sign-out"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="platformStack">
+      <div class="panel">
+        <div class="panelHead">
+          <div class="companyProfileHead">
+            <div class="companyLogoMark" id="companyAdminLogoMark"><i class="ph ph-buildings"></i></div>
+            <div>
+              <div class="panelTitle" id="companyAdminTitle">Company</div>
+              <div class="mutedText" id="companyAdminSub">Company setup and activity.</div>
+            </div>
+          </div>
+          <div class="platformActions">
+            <button id="btnUploadCompanyLogo" class="miniIconBtn" type="button" title="Upload company logo" aria-label="Upload company logo">
+              <i class="ph ph-plus"></i>
+            </button>
+            <input id="companyLogoInput" class="hiddenFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"/>
+            <select id="companyAdminSelect" class="platformSelect" style="max-width:260px;" aria-label="Company workspace"></select>
+          </div>
+        </div>
+        <div class="panelBody">
+          <div class="statGrid">
+            <div class="stat"><b id="companyStatUsers">0</b><span>Users</span></div>
+            <div class="stat"><b id="companyStatEmployees">0</b><span>Employees</span></div>
+            <div class="stat"><b id="companyStatSites">0</b><span>Sites</span></div>
+            <div class="stat"><b id="companyStatEvents">0</b><span>Clock Events</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead">
+          <div>
+            <div class="panelTitle">Payroll</div>
+            <div class="mutedText">Hours and wage estimate from approved clock events.</div>
+          </div>
+          <button id="btnExportPayroll" class="miniIconBtn" type="button" title="Generate payslip" aria-label="Generate payslip">
+            <i class="ph ph-file-pdf"></i>
+          </button>
+        </div>
+        <div class="panelBody">
+          <div class="payrollFilters">
+            <input id="payrollStartDate" class="platformInput" type="date" aria-label="Payroll start date"/>
+            <input id="payrollEndDate" class="platformInput" type="date" aria-label="Payroll end date"/>
+            <button id="btnRunPayroll" class="platformBtn inline" type="button">Run Payroll</button>
+          </div>
+          <div class="statGrid" style="margin-bottom:12px;">
+            <div class="stat"><b id="payrollTotalHours">0.00</b><span>Total Hours</span></div>
+            <div class="stat"><b id="payrollTotalGross">R0.00</b><span>Gross Pay</span></div>
+          </div>
+          <div class="tableScroll">
+            <table class="dataTable payrollTable">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Hours</th>
+                  <th>Rate</th>
+                  <th>Gross</th>
+                </tr>
+              </thead>
+              <tbody id="payrollBody">
+                <tr><td colspan="4" class="mutedText">Run payroll to calculate hours.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="adminTools">
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">Employees</div>
+            <div class="platformActions">
+              <span class="statusPill" id="companyEmployeeCount">0</span>
+              <button id="btnToggleEmployeeForm" class="miniIconBtn" type="button" title="Add employee" aria-label="Add employee">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="employeeFormBox" class="collapseBox" hidden>
+              <form class="platformForm" id="companyEmployeeForm" style="margin-bottom:14px;">
+                <input id="companyEmployeeId" class="platformInput" placeholder="Employee ID e.g. E014" autocomplete="off"/>
+                <input id="companyEmployeeName" class="platformInput" placeholder="Full name" autocomplete="off"/>
+                <input id="companyEmployeeIdNumber" class="platformInput" placeholder="ID number" autocomplete="off"/>
+                <select id="companyEmployeePayType" class="platformSelect">
+                  <option value="hourly">Hourly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <input id="companyEmployeeRate" class="platformInput" inputmode="decimal" placeholder="Rate" autocomplete="off"/>
+                <input id="companyEmployeeEmploymentDate" class="platformInput" type="date" aria-label="Employment date"/>
+                <select id="companyEmployeePayCycle" class="platformSelect">
+                  <option value="weekly">Weekly</option>
+                  <option value="fortnightly">Fortnightly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <select id="companyEmployeeActive" class="platformSelect">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <button id="btnSaveEmployee" class="platformBtn" type="submit">Save Employee</button>
+              </form>
+            </div>
+            <div id="companyEmployeeList" class="compactList"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">Sites</div>
+            <div class="platformActions">
+              <span class="statusPill" id="companySiteCount">0</span>
+              <button id="btnToggleSiteForm" class="miniIconBtn" type="button" title="Add site" aria-label="Add site">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="siteFormBox" class="collapseBox" hidden>
+              <form class="platformForm" id="companySiteForm" style="margin-bottom:14px;">
+                <input id="companySiteId" class="platformInput" placeholder="Site ID e.g. S09" autocomplete="off"/>
+                <input id="companySiteName" class="platformInput" placeholder="Site name" autocomplete="off"/>
+                <input id="companySiteLat" class="platformInput" inputmode="decimal" placeholder="Latitude"/>
+                <input id="companySiteLon" class="platformInput" inputmode="decimal" placeholder="Longitude"/>
+                <input id="companySiteRadius" class="platformInput" inputmode="numeric" placeholder="Radius metres" value="200"/>
+                <select id="companySiteActive" class="platformSelect">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <button id="btnSaveCompanySite" class="platformBtn" type="submit">Save Site</button>
+              </form>
+            </div>
+            <div id="companySiteList" class="compactList"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">Supervisors</div>
+            <div class="platformActions">
+              <span class="statusPill" id="companySupervisorCount">0</span>
+              <button id="btnToggleSupervisorForm" class="miniIconBtn" type="button" title="Add supervisor" aria-label="Add supervisor">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="supervisorFormBox" class="collapseBox" hidden>
+              <form class="platformForm" id="companySupervisorForm" style="margin-bottom:14px;">
+                <input id="companySupervisorId" class="platformInput" placeholder="Supervisor ID e.g. SUP04" autocomplete="off"/>
+                <input id="companySupervisorCode" class="platformInput" placeholder="Clocking code" maxlength="6" autocomplete="off"/>
+                <select id="companySupervisorEmployee" class="platformSelect"></select>
+                <input id="companySupervisorName" class="platformInput" placeholder="Manual full name" autocomplete="off" hidden/>
+                <select id="companySupervisorActive" class="platformSelect">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <button id="btnSaveSupervisor" class="platformBtn" type="submit">Save Supervisor</button>
+              </form>
+            </div>
+            <div id="companySupervisorList" class="compactList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead">
+          <div class="panelTitle">Recent Clock Events</div>
+          <div class="platformActions">
+            <span class="statusPill">scroll all</span>
+            <button id="btnExportCompanyEvents" class="miniIconBtn" type="button" title="Export clock events" aria-label="Export clock events">
+              <i class="ph ph-download-simple"></i>
+            </button>
+          </div>
+        </div>
+        <div class="panelBody">
+          <div class="tableScroll tall">
+            <table class="dataTable eventsTable">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Employee</th>
+                  <th>Action</th>
+                  <th>Site</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="companyAdminEventsBody">
+                <tr><td colspan="5" class="mutedText">No company selected.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="employeeQrModal" aria-hidden="true">
+    <div class="modalCard qrModalCard">
+      <div class="brandBadge" style="margin:0 auto 10px;"><i class="ph ph-qr-code"></i></div>
+      <div class="modalTitle">Employee QR</div>
+      <div class="qrEmployeeName" id="employeeQrName">Employee</div>
+      <div class="qrEmployeeId" id="employeeQrId">E000</div>
+      <div class="qrBox" id="employeeQrBox"></div>
+      <div class="qrHint">Scan this code in the clocking screen.</div>
+      <div class="modalActions">
+        <button id="btnCloseEmployeeQr" class="btnGhost" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="eventTimeModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="modalTitle">Edit Clock Time</div>
+      <div class="modalSub">Adjust the recorded date and time for this entry.</div>
+      <div class="eventEditMeta">
+        <div>Employee: <b id="eventTimeEmployee">-</b></div>
+        <div>Site: <b id="eventTimeSite">-</b></div>
+        <div>Action: <b id="eventTimeAction">-</b></div>
+      </div>
+      <form class="platformForm" id="eventTimeForm">
+        <input id="eventTimeDate" class="platformInput" type="date"/>
+        <input id="eventTimeTime" class="platformInput" type="time" step="1"/>
+        <button id="btnSaveEventTime" class="platformBtn" type="submit">Update Time</button>
+      </form>
+      <div class="modalActions">
+        <button id="btnCloseEventTime" class="btnGhost" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="payrollBreakdownModal" aria-hidden="true">
+    <div class="modalCard">
+      <div class="modalTitle">Payroll Breakdown</div>
+      <div class="modalSub" id="payrollBreakdownEmployee">Employee</div>
+      <div class="breakdownGrid">
+        <div class="breakdownRow">
+          <b>Normal</b>
+          <span id="breakdownNormalHours">0.00 hrs</span>
+          <strong id="breakdownNormalPay">R0.00</strong>
+        </div>
+        <div class="breakdownRow">
+          <b>OT1 1.5x</b>
+          <span id="breakdownOt1Hours">0.00 hrs</span>
+          <strong id="breakdownOt1Pay">R0.00</strong>
+        </div>
+        <div class="breakdownRow">
+          <b>OT2 2x</b>
+          <span id="breakdownOt2Hours">0.00 hrs</span>
+          <strong id="breakdownOt2Pay">R0.00</strong>
+        </div>
+        <div class="breakdownRow">
+          <b>Public Holiday Top-up</b>
+          <span id="breakdownHolidayHours">0.00 hrs</span>
+          <strong>Included</strong>
+        </div>
+        <div class="breakdownRow total">
+          <b>Total</b>
+          <span id="breakdownTotalHours">0.00 hrs</span>
+          <strong id="breakdownTotalPay">R0.00</strong>
+        </div>
+      </div>
+      <div class="modalActions">
+        <button id="btnClosePayrollBreakdown" class="btnGhost" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal sheetModal" id="payslipModal" aria-hidden="true">
+    <div class="modalCard modalSheet">
+      <button id="btnClosePayslip" class="modalCloseIcon" type="button" title="Close" aria-label="Close">
+        <i class="ph ph-x"></i>
+      </button>
+      <div class="modalTitle">Generate Payslip</div>
+      <div class="modalSub">Choose an employee from the current payroll run.</div>
+      <div class="platformForm payslipSheetForm">
+        <select id="payslipEmployeeSelect" class="platformSelect" aria-label="Payslip employee"></select>
+        <button id="btnGeneratePayslip" class="platformBtn" type="button">Generate Payslip</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<main class="platformShell" id="employeeShell" hidden>
+  <div class="platformWrap">
+    <div class="platformTop">
+      <div>
+        <div class="platformBrand">
+          <div class="brandBadge"><i class="ph ph-user-circle"></i></div>
+          <div>
+            <div class="platformTitle">My Dashboard</div>
+            <div class="platformSub" id="employeeDashboardCompany">Company workspace</div>
+            <div class="mutedText" id="employeeDashboardUser">Signed in</div>
+          </div>
+        </div>
+      </div>
+      <div class="platformActions">
+        <button id="btnEmployeeBack" class="miniIconBtn" type="button" title="Back" aria-label="Back" hidden>
+          <i class="ph ph-arrow-left"></i>
+        </button>
+        <button id="btnEmployeeLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
+          <i class="ph ph-sign-out"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="platformStack">
+      <div class="panel">
+        <div class="panelHead">
+          <div>
+            <div class="panelTitle" id="employeeDashboardName">Employee</div>
+            <div class="mutedText" id="employeeDashboardMeta">Employee ID</div>
+          </div>
+          <span class="statusPill" id="employeeDashboardPay">Payroll</span>
+        </div>
+        <div class="panelBody">
+          <div class="employeeInfoGrid">
+            <div class="employeeInfoTile">
+              <span>ID Number</span>
+              <b id="employeeDashboardIdNumber">-</b>
+            </div>
+            <div class="employeeInfoTile">
+              <span>Employment Date</span>
+              <b id="employeeDashboardEmploymentDate">-</b>
+            </div>
+          </div>
+          <div class="payrollFilters">
+            <input id="employeePeriodStart" class="platformInput" type="date" aria-label="Start date"/>
+            <input id="employeePeriodEnd" class="platformInput" type="date" aria-label="End date"/>
+            <button id="btnRunEmployeeDashboard" class="platformBtn inline" type="button">Refresh</button>
+            <button id="btnEmployeePayslip" class="platformBtn secondary inline" type="button">Generate Payslip</button>
+          </div>
+          <div class="statGrid" style="margin-bottom:12px;">
+            <div class="stat"><b id="employeeTotalHours">0.00</b><span>Total Hours</span></div>
+            <div class="stat"><b id="employeeGrossPay">R0.00</b><span>Gross Pay</span></div>
+          </div>
+          <div class="breakdownGrid">
+            <div class="breakdownRow">
+              <b>Normal</b>
+              <span id="employeeNormalHours">0.00 hrs</span>
+              <strong id="employeeNormalPay">R0.00</strong>
+            </div>
+            <div class="breakdownRow">
+              <b>OT1 1.5x</b>
+              <span id="employeeOt1Hours">0.00 hrs</span>
+              <strong id="employeeOt1Pay">R0.00</strong>
+            </div>
+            <div class="breakdownRow">
+              <b>OT2 2x</b>
+              <span id="employeeOt2Hours">0.00 hrs</span>
+              <strong id="employeeOt2Pay">R0.00</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panelHead">
+          <div class="panelTitle">Recent Clock Events</div>
+          <span class="statusPill">view only</span>
+        </div>
+        <div class="panelBody">
+          <div class="tableScroll tall">
+            <table class="dataTable eventsTable">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Employee</th>
+                  <th>Action</th>
+                  <th>Site</th>
+                  <th>Result</th>
+                </tr>
+              </thead>
+              <tbody id="employeeEventsBody">
+                <tr><td colspan="5" class="mutedText">No events loaded.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<main class="appShell" id="appShell" hidden>
+<div class="wrap">
+  <div class="header">
+    <div class="headerTop">
+      <div>
+        <div class="title">Shiftly Clocking</div>
+        <div class="subtitle">Scan QR cards and submit</div>
+        <div class="accountLine">
+          <span class="companyDot"></span>
+          <b id="companyLabel">Company workspace</b>
+          <small id="userLabel">Signed in</small>
+          <select id="companySelect" class="companySelect" aria-label="Company workspace"></select>
+        </div>
+      </div>
+      <div class="headerActions">
+        <div class="supTop">
+          <input id="supCode" class="supInput" maxlength="6" placeholder="CODE" autocomplete="off"/>
+        </div>
+        <button id="btnBackToCompanyDashboard" class="iconBtn" type="button" title="Company dashboard" aria-label="Company dashboard" hidden>
+          <i class="ph ph-squares-four"></i>
+        </button>
+        <button id="btnOpenEmployeeDashboard" class="iconBtn" type="button" title="My dashboard" aria-label="My dashboard" hidden>
+          <i class="ph ph-user"></i>
+        </button>
+        <button id="btnLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
+          <i class="ph ph-sign-out"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="segWrap">
+      <div class="seg">
+        <button id="btnIn" class="active" type="button">Clock IN</button>
+        <button id="btnOut" type="button">Clock OUT</button>
+      </div>
+    </div>
+
+    <button class="siteBtn" id="btnSite" type="button">
+      Site: <span id="siteName">—</span>
+      <small>Tap to change</small>
+    </button>
+
+    <div class="pickerPanel" id="pickerPanel">
+      <select id="siteSelect">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+
+    <!-- ADMIN PANEL (only when admin code is present) -->
+    <div class="adminPanel" id="adminPanel">
+      <div class="adminRow">
+        <div class="adminHint">
+          <b style="color:var(--gold);">Admin mode</b><br/>
+          Add sites & set radius using the map.
+        </div>
+        <button class="adminBtn" id="btnAddSite" type="button">
+          <i class="ph ph-plus-circle"></i> Add Site
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="camCard">
     <div id="reader"></div>
-
-    <label for="manualEmp">Manual Employee ID (fallback)</label>
-    <input id="manualEmp" placeholder="Type/paste employee ID" />
-    <button class="btnSmall" onclick="addManualEmployee()">Add Employee</button>
-
-    <div class="row">
-      <button class="btnSmall" onclick="clearList()">Clear list</button>
-      <button class="btnSmall" onclick="runCameraDiagnostics()">Camera Diagnostics</button>
+    <div class="scanBox"></div>
+    <div class="camFrame"></div>
+    <div class="camBadge">
+      <b>Scan QR</b>
+      <small>Hold steady • Auto-add to queue</small>
     </div>
-
-    <div class="pill"><strong>Employees scanned:</strong> <span id="count">0</span></div>
-    <div id="list" class="list"></div>
-
-    <div id="debug" class="debug" style="display:none;"></div>
   </div>
 
-  <div class="card">
-    <div class="row">
-      <button onclick="clockBatch('IN')">Clock IN All</button>
-      <button onclick="clockBatch('OUT')">Clock OUT All</button>
+  <div class="queue">
+    <div class="queueHead">
+      <h3>Queue (<span id="qCount">0</span>)</h3>
+      <button class="clearBtn" id="btnClear" type="button" disabled>Clear</button>
+    </div>
+    <div id="queueList"></div>
+  </div>
+</div>
+
+<div class="sticky">
+  <div class="stickyInner">
+    <button id="btnSubmit" class="submitBtn" type="button" disabled>Submit Clock IN (0)</button>
+    <div class="footHint">Location + online required • Inside site radius</div>
+  </div>
+</div>
+
+<!-- Add site modal -->
+<div class="modal" id="siteModal" aria-hidden="true">
+  <div class="modalCard">
+    <div class="modalTitle">Add new site</div>
+    <div class="modalSub">Drop the pin at the site entrance, set radius (m), then save.</div>
+
+    <div class="formGrid">
+      <input id="newSiteName" class="input" placeholder="Site name (e.g. Waterfall Phase 2)" autocomplete="off"/>
+      <input id="newSiteRadius" class="input" placeholder="Radius" inputmode="numeric" autocomplete="off"/>
     </div>
 
-    <p id="status"></p>
-    <small id="meta"></small>
-    <div id="batchResults" class="list"></div>
+    <div id="map"></div>
+
+    <div class="modalActions">
+      <button id="btnCloseModal" class="btnGhost" type="button">Cancel</button>
+      <button id="btnSaveSite" class="btnPrimary" type="button">Save site</button>
+    </div>
   </div>
+</div>
+</main>
 
-  <script src="/app.js"></script>
-
-  <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/service-worker.js").catch(()=>{});
-    }
-  </script>
+<script src="./config.js"></script>
+<script defer src="./app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/service-worker.js").catch(console.error);
+    });
+  }
+</script>
 </body>
 </html>
