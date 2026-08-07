@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v96"; // bump this whenever you want a guaranteed refresh
+const CACHE_NAME = "shiftly-v196"; // bump this whenever you want a guaranteed refresh
 
 const ASSETS = [
   "/",
@@ -6,6 +6,8 @@ const ASSETS = [
   "/config.js",
   "/app.js",
   "/manifest.json",
+  "/icons/shiftly-favicon-32.png",
+  "/icons/shiftly-favicon-192.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png"
 ];
@@ -35,7 +37,7 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
 
   // NETWORK-FIRST for HTML (prevents “stuck old UI” on mobile)
-  if (url.pathname === "/" || url.pathname === "/index.html") {
+  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/app.js" || url.pathname === "/config.js") {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: "no-store" });

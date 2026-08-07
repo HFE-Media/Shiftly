@@ -10,7 +10,8 @@ type InvitePayload = {
   company_id?: string;
   email?: string;
   full_name?: string;
-  role?: "owner" | "admin" | "supervisor" | "employee" | "viewer";
+  role?: "owner" | "admin" | "billing" | "supervisor" | "employee" | "viewer";
+  billing_access?: boolean;
   employee_id?: string | null;
 };
 
@@ -49,7 +50,7 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const siteUrl = Deno.env.get("SHIFTLY_SITE_URL") || "https://project-qj3xc.vercel.app";
+  const siteUrl = Deno.env.get("SHIFTLY_SITE_URL") || "https://shiftlyapp.co.za";
 
   if (!supabaseUrl || !serviceRoleKey) {
     return json({ error: "Edge Function secrets are not configured" }, 500);
@@ -84,11 +85,12 @@ Deno.serve(async (req) => {
   const fullName = String(payload.full_name || "").trim();
   const employeeId = String(payload.employee_id || "").trim().toUpperCase() || null;
   const role = payload.role || "owner";
+  const billingAccess = payload.billing_access === true && ["owner", "admin"].includes(role);
 
   if (!companyId) return json({ error: "company_id is required" }, 400);
   if (!email) return json({ error: "email is required" }, 400);
   if (!fullName) return json({ error: "full_name is required" }, 400);
-  if (!["owner", "admin", "supervisor", "employee", "viewer"].includes(role)) {
+  if (!["owner", "admin", "billing", "supervisor", "employee", "viewer"].includes(role)) {
     return json({ error: "Invalid role" }, 400);
   }
 
@@ -133,6 +135,7 @@ Deno.serve(async (req) => {
         email,
         full_name: fullName,
         role,
+        billing_access: billingAccess,
         employee_id: employeeId,
         active: true,
       },
@@ -149,6 +152,7 @@ Deno.serve(async (req) => {
     email,
     full_name: fullName,
     role,
+    billing_access: billingAccess,
     employee_id: employeeId,
     invite_sent: inviteSent,
   });

@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "clocking-app-d926c",
+    "default": "shiftly-21919",
+    "ClockingLegacy": "clocking-app-d926c",
     "Shiftly": "shiftly-21919"
   },
   "targets": {},

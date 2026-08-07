@@ -8,7 +8,7 @@ drop constraint if exists employees_pay_type_check;
 
 alter table public.employees
 add constraint employees_pay_type_check
-check (pay_type in ('hourly', 'monthly'));
+check (pay_type in ('hourly', 'daily', 'monthly'));
 
 alter table public.employees
 drop constraint if exists employees_pay_cycle_check;

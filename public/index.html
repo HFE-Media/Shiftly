@@ -5,10 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
 <title>Shiftly Workforce</title>
 <meta name="theme-color" content="#0C0C0C"/>
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/shiftly-favicon-32.png?v=148"/>
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/shiftly-favicon-192.png?v=148"/>
 <link rel="manifest" href="./manifest.json"/>
 
 <!-- Libraries -->
 <script src="https://unpkg.com/html5-qrcode"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/@phosphor-icons/web"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -164,7 +167,9 @@ body{
 }
 .appShell[hidden],
 .platformShell[hidden],
+.portfolioShell[hidden],
 .companyAdminShell[hidden],
+.billingShell[hidden],
 .authScreen[hidden]{display:none !important;}
 [hidden]{display:none !important;}
 
@@ -321,6 +326,34 @@ body{
   gap:12px;
   min-width:0;
 }
+.billingCompanyCopy{
+  display:grid;
+  gap:2px;
+  min-width:0;
+}
+.billingCompanyTitleRow{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.billingCompanyTitleRow .panelTitle{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.billingSettingsBtn{
+  width:32px;
+  height:32px;
+  flex:0 0 auto;
+}
+.billingSettingsBtn i{font-size:18px;}
+.billingProfileInline{
+  margin-top:14px;
+  padding-top:14px;
+  border-top:1px solid rgba(212,175,55,0.12);
+}
 .companyLogoMark{
   width:48px;
   height:48px;
@@ -382,6 +415,79 @@ body{
   text-transform:lowercase;
   letter-spacing:.04em;
   overflow-wrap:anywhere;
+}
+.portfolioGrid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.portfolioCard{
+  width:100%;
+  border:1px solid rgba(212,175,55,0.16);
+  background:linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018));
+  color:var(--txt);
+  border-radius:8px;
+  padding:14px;
+  text-align:left;
+  cursor:pointer;
+  box-shadow:var(--glow);
+}
+.portfolioCard:hover{
+  border-color:rgba(212,175,55,0.42);
+  background:linear-gradient(180deg,rgba(212,175,55,0.12),rgba(255,255,255,0.018));
+}
+.portfolioCardHead{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:14px;
+}
+.portfolioCompany{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  min-width:0;
+}
+.portfolioCompany .companyLogoMark{
+  width:42px;
+  height:42px;
+}
+.portfolioName{
+  font-size:16px;
+  font-weight:950;
+  line-height:1.08;
+  overflow-wrap:anywhere;
+}
+.portfolioMeta{
+  margin-top:3px;
+  color:var(--muted);
+  font-size:11px;
+  font-variant:small-caps;
+  text-transform:lowercase;
+  letter-spacing:.04em;
+}
+.portfolioStats{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+}
+.portfolioStat{
+  border:1px solid rgba(212,175,55,0.12);
+  background:rgba(255,255,255,0.026);
+  border-radius:8px;
+  padding:9px;
+  min-width:0;
+}
+.portfolioStat b{
+  display:block;
+  font-size:18px;
+}
+.portfolioStat span{
+  display:block;
+  margin-top:2px;
+  color:var(--muted);
+  font-size:10px;
 }
 .statGrid{
   display:grid;
@@ -463,6 +569,359 @@ body{
   gap:9px;
   margin-bottom:12px;
 }
+.payrollFilters.withLevy{
+  grid-template-columns:1fr 1fr minmax(170px,1fr) auto;
+}
+.payrollRulesDetails{
+  border:1px solid rgba(212,175,55,0.12);
+  background:linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018));
+  border-radius:8px;
+  margin-bottom:12px;
+  overflow:hidden;
+}
+.payrollRulesDetails summary{
+  list-style:none;
+  cursor:pointer;
+  padding:12px;
+  color:var(--txt);
+  font-size:12px;
+  font-weight:900;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+.payrollRulesDetails summary::-webkit-details-marker{display:none;}
+.payrollRulesStatus{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-left:auto;
+}
+.payrollRulesPill{
+  min-width:86px;
+  border:1px solid rgba(212,175,55,0.20);
+  border-radius:999px;
+  background:rgba(212,175,55,0.055);
+  color:rgba(243,242,238,0.84);
+  font-size:10px;
+  font-weight:900;
+  line-height:1;
+  padding:8px 11px;
+  text-align:center;
+  white-space:nowrap;
+}
+.payrollRulesToggle{
+  width:34px;
+  height:34px;
+  border:1px solid rgba(212,175,55,0.35);
+  border-radius:8px;
+  background:rgba(212,175,55,0.08);
+  color:var(--muted);
+  display:grid;
+  place-items:center;
+}
+.payrollRulesToggle i{
+  color:var(--txt);
+  font-size:17px;
+}
+.payrollRulesToggle .closeIcon{display:none;}
+.payrollRulesDetails[open] .payrollRulesToggle .editIcon{display:none;}
+.payrollRulesDetails[open] .payrollRulesToggle .closeIcon{display:block;}
+.payrollRulesDetails[open] .payrollRulesPill{
+  border-color:rgba(255,193,28,0.60);
+  background:linear-gradient(180deg,rgba(255,193,28,0.18),rgba(255,193,28,0.05));
+  color:var(--txt);
+}
+.payrollRulesForm{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+  padding:12px;
+  border-top:1px solid rgba(212,175,55,0.10);
+}
+.payrollRuleSection{
+  border:1px solid rgba(212,175,55,0.12);
+  background:linear-gradient(180deg,rgba(255,255,255,0.028),rgba(255,255,255,0.012));
+  border-radius:8px;
+  padding:11px;
+}
+.payrollRuleSectionHead{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:10px;
+  margin-bottom:9px;
+}
+.payrollRuleSectionHead b{
+  display:block;
+  color:var(--txt);
+  font-size:12px;
+  font-weight:900;
+  line-height:1.1;
+}
+.payrollRuleSectionHead span{
+  color:rgba(243,242,238,0.56);
+  font-size:10px;
+  font-weight:700;
+  line-height:1.25;
+}
+.payrollRulesGrid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+}
+.payrollRulesGrid.two{
+  grid-template-columns:1fr 1fr;
+}
+.payrollRatesLayout{
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:9px;
+}
+.payrollRatesLayout .payrollRuleField:nth-child(1),
+.payrollRatesLayout .payrollRuleField:nth-child(2),
+.payrollRatesLayout .payrollRuleField:nth-child(3){
+  grid-column:span 2;
+}
+.payrollRatesLayout .payrollRuleField:nth-child(4),
+.payrollRatesLayout .payrollRuleField:nth-child(5){
+  grid-column:span 3;
+}
+.payrollMethodCards{
+  display:flex;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  padding:5px;
+  border:1px solid rgba(212,175,55,0.15);
+  border-radius:999px;
+  background:linear-gradient(180deg,rgba(255,255,255,0.045),rgba(0,0,0,0.12));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.payrollMethodCard{
+  appearance:none;
+  border:1px solid transparent;
+  background:transparent;
+  color:var(--txt);
+  border-radius:999px;
+  min-height:38px;
+  padding:9px 13px;
+  text-align:center;
+  cursor:pointer;
+  flex:1 1 0;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:6px;
+  box-shadow:none;
+  transition:border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.payrollMethodCard:hover{
+  border-color:rgba(255,193,28,0.38);
+  transform:none;
+}
+.payrollMethodCard b{
+  font-size:12px;
+  line-height:1.1;
+  white-space:nowrap;
+}
+.payrollMethodCard span{
+  display:none;
+}
+.payrollMethodCard.isActive{
+  border-color:rgba(255,193,28,0.86);
+  background:linear-gradient(180deg,#f3c43b,#bd8a08);
+  color:#10100d;
+  box-shadow:0 7px 18px rgba(255,193,28,0.16),inset 0 1px 0 rgba(255,255,255,0.32);
+}
+.payrollRulesForm[data-method="cycle_only"] .dailyOnly,
+.payrollRulesForm[data-method="cycle_only"] .dayRulesOnly,
+.payrollRulesForm[data-method="day_rules"] .cycleOnly{
+  display:none !important;
+}
+.payrollRulesForm[data-method="cycle_only"] .workWeekBlock{
+  padding:10px;
+}
+.payrollRulesForm[data-method="cycle_only"] .workWeekChip:not([data-day="sat"]):not([data-day="sun"]){
+  display:none;
+}
+.payrollRulesForm[data-method="cycle_only"] #workWeekEditor:not([hidden]){
+  display:grid !important;
+}
+.payrollRulesForm[data-method="cycle_only"] .workWeekRow:not([data-work-week-day="sat"]):not([data-work-week-day="sun"]){
+  display:none;
+}
+.payrollRuleField label{
+  display:block;
+  color:rgba(243,242,238,0.64);
+  font-size:9px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin:0 0 5px;
+}
+.payrollRulesForm .platformBtn{
+  width:100%;
+}
+.statutoryToggleGrid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px;
+  margin-top:10px;
+}
+.statutoryToggle{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:52px;
+  padding:10px 12px;
+  border:1px solid rgba(221,174,37,.24);
+  border-radius:8px;
+  background:linear-gradient(135deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
+}
+.statutoryToggle b{
+  font-size:11px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.statutoryToggle span{
+  display:block;
+  margin-top:2px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.2;
+}
+.statutoryToggle input{
+  appearance:none;
+  width:42px;
+  height:24px;
+  flex:0 0 auto;
+  border-radius:999px;
+  border:1px solid rgba(221,174,37,.38);
+  background:#171717;
+  position:relative;
+  cursor:pointer;
+}
+.statutoryToggle input::after{
+  content:"";
+  position:absolute;
+  width:18px;
+  height:18px;
+  top:2px;
+  left:3px;
+  border-radius:999px;
+  background:#777;
+  transition:.18s ease;
+}
+.statutoryToggle input:checked{
+  background:linear-gradient(180deg,#f8db62,#b8860b);
+  border-color:#e8c64d;
+}
+.statutoryToggle input:checked::after{
+  left:19px;
+  background:#111;
+}
+.workWeekBlock{
+  border:1px solid rgba(212,175,55,0.22);
+  background:linear-gradient(180deg,rgba(255,193,28,0.055),rgba(0,0,0,0.12));
+  border-radius:8px;
+  padding:10px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.035);
+}
+.workWeekHead{
+  display:grid;
+  grid-template-columns:minmax(190px,auto) minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+}
+.workWeekMeta{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  min-width:0;
+}
+.workWeekIcon{
+  width:34px;
+  height:34px;
+  border:1px solid rgba(212,175,55,0.22);
+  border-radius:8px;
+  display:grid;
+  place-items:center;
+  color:#f6ce4d;
+  background:rgba(255,193,28,0.08);
+  box-shadow:none;
+  flex:0 0 auto;
+}
+.workWeekIcon i{font-size:18px;}
+.workWeekHead b{
+  display:block;
+  font-size:13px;
+  line-height:1.05;
+}
+.workWeekHead span{
+  display:block;
+  color:var(--muted);
+  font-size:10.5px;
+  line-height:1.25;
+  margin-top:3px;
+}
+.workWeekChips{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  align-items:center;
+  min-width:0;
+}
+.workWeekChip{
+  border:1px solid rgba(212,175,55,0.22);
+  background:rgba(255,255,255,0.055);
+  color:var(--txt);
+  border-radius:999px;
+  min-width:74px;
+  padding:7px 10px;
+  font-size:10px;
+  font-weight:900;
+  white-space:nowrap;
+  text-align:center;
+  box-shadow:none;
+}
+.workWeekChip[data-rule="ot1"]{
+  border-color:rgba(255,193,28,0.34);
+  background:linear-gradient(180deg,rgba(255,193,28,0.18),rgba(255,193,28,0.055));
+}
+.workWeekChip[data-rule="ot2"]{
+  border-color:rgba(255,226,128,0.42);
+  background:linear-gradient(180deg,rgba(255,226,128,0.20),rgba(255,226,128,0.045));
+}
+.workWeekHead .miniIconBtn{
+  flex:0 0 auto;
+  box-shadow:0 0 0 1px rgba(255,193,28,0.10),0 8px 22px rgba(255,193,28,0.08);
+}
+.workWeekHead .miniIconBtn .closeIcon{display:none;}
+.workWeekBlock.isEditing .workWeekHead .miniIconBtn .editIcon{display:none;}
+.workWeekBlock.isEditing .workWeekHead .miniIconBtn .closeIcon{display:block;}
+.workWeekEditor{
+  display:grid;
+  gap:7px;
+  margin-top:12px;
+  padding-top:10px;
+  border-top:1px solid rgba(212,175,55,0.10);
+}
+.workWeekEditor[hidden]{display:none !important;}
+.workWeekRow{
+  display:grid;
+  grid-template-columns:54px minmax(0,1fr) minmax(0,1.2fr);
+  gap:7px;
+  align-items:center;
+}
+.workWeekDay{
+  color:rgba(243,242,238,0.78);
+  font-size:10px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+}
 .payrollTable th:nth-child(1),
 .payrollTable td:nth-child(1){width:38%;}
 .payrollTable th:nth-child(2),
@@ -471,6 +930,10 @@ body{
 .payrollTable td:nth-child(3){width:22%;}
 .payrollTable th:nth-child(4),
 .payrollTable td:nth-child(4){width:22%;}
+.payrollTable th:nth-child(2),
+.payrollTable td:nth-child(2){
+  text-align:center;
+}
 .payrollTable td:nth-child(2),
 .payrollTable td:nth-child(3),
 .payrollTable td:nth-child(4){
@@ -488,10 +951,110 @@ body{
   font:inherit;
   font-weight:950;
   cursor:pointer;
+  text-align:center;
+  text-decoration:underline;
+  text-decoration-color:rgba(212,175,55,0.45);
+  text-underline-offset:3px;
+}
+.payrollMoneyBtn{
+  border:0;
+  padding:0;
+  background:transparent;
+  color:var(--txt);
+  font:inherit;
+  font-weight:950;
+  cursor:pointer;
   text-align:left;
   text-decoration:underline;
   text-decoration-color:rgba(212,175,55,0.45);
   text-underline-offset:3px;
+}
+.deductionStats{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:9px;
+  margin:14px 0;
+}
+.deductionStat{
+  border:1px solid rgba(212,175,55,0.12);
+  background:rgba(255,255,255,0.025);
+  border-radius:8px;
+  padding:10px;
+}
+.deductionStat b{
+  display:block;
+  font-size:16px;
+}
+.deductionStat span{
+  display:block;
+  color:var(--muted);
+  font-size:11px;
+  margin-top:4px;
+}
+.deductionModalCard{position:relative;}
+.deductionEditBtn{
+  position:absolute;
+  top:12px;
+  right:12px;
+  width:34px;
+  height:34px;
+  border:1px solid rgba(212,175,55,0.35);
+  border-radius:8px;
+  background:rgba(212,175,55,0.08);
+  color:var(--txt);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+}
+.deductionEditBtn i{font-size:17px;}
+.deductionList{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:11px;
+  margin:4px 0 12px;
+}
+.deductionGroup{
+  display:grid;
+  gap:8px;
+}
+.deductionGroupTitle{
+  color:var(--muted);
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  font-weight:950;
+}
+.deductionGroupGrid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;
+}
+.deductionEditRow{
+  display:grid;
+  gap:7px;
+  border:1px solid rgba(212,175,55,0.12);
+  background:linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.018));
+  border-radius:8px;
+  padding:10px;
+}
+.deductionEditRow b{
+  color:var(--muted);
+  font-size:10px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+.deductionEditRow input{
+  width:100%;
+  height:38px;
+  text-align:right;
+  font-size:14px;
+}
+.deductionForm{
+  display:grid;
+  gap:8px;
+}
+.deductionForm .platformBtn{
+  grid-column:1 / -1;
 }
 .breakdownGrid{
   display:grid;
@@ -521,6 +1084,25 @@ body{
   border-color:rgba(212,175,55,0.34);
   background:rgba(212,175,55,0.08);
 }
+.payrollBreakdownCard{position:relative;}
+.timesheetCard{position:relative;width:min(960px,100%);max-height:min(88vh,820px);display:flex;flex-direction:column;}
+.timesheetHeader{display:flex;align-items:center;gap:12px;padding-right:42px;}
+.timesheetLogo{width:48px;height:48px;border:1px solid var(--stroke2);border-radius:8px;object-fit:cover;background:#171717;}
+.timesheetMeta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0;}
+.timesheetMeta div{border:1px solid var(--stroke);border-radius:8px;padding:9px;background:rgba(255,255,255,.025);}
+.timesheetMeta span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;margin-bottom:3px;}
+.timesheetTableWrap{overflow:auto;border:1px solid var(--stroke);border-radius:8px;min-height:160px;}
+.timesheetTable{width:100%;min-width:700px;border-collapse:collapse;}
+.timesheetTable th,.timesheetTable td{padding:10px;border-bottom:1px solid var(--stroke);text-align:left;white-space:nowrap;}
+.timesheetTable th{position:sticky;top:0;background:#171717;color:#d9d3c8;font-size:10px;text-transform:uppercase;z-index:1;}
+.timesheetTable th:nth-child(n+3),.timesheetTable td:nth-child(n+3){text-align:right;}
+.timesheetTable tr:last-child td{border-bottom:0;}
+.timesheetIncomplete{color:var(--danger);font-weight:800;}
+.timesheetAuto{color:#f59e0b;font-weight:900;}
+.timesheetTotal{margin-top:12px;text-align:right;font-weight:900;}
+.timesheetNotice{margin-top:8px;color:var(--muted);font-size:11px;}
+.timesheetActions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
+@media(max-width:620px){.timesheetMeta{grid-template-columns:1fr}.timesheetCard{max-height:92vh}.timesheetActions{display:grid;grid-template-columns:1fr 1fr}.timesheetActions .btnGhost:last-child{grid-column:1 / -1;}}
 .employeeInfoGrid{
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -561,6 +1143,7 @@ body{
 }
 .detailToggle.resultOk{color:#d9f99d;}
 .detailToggle.resultBlocked{color:#fca5a5;}
+.detailToggle.resultAuto{color:#fbbf24;}
 .timeEditBtn{
   border:0;
   padding:0;
@@ -617,6 +1200,135 @@ body{
   grid-template-columns:repeat(3,minmax(0,1fr));
   gap:14px;
 }
+.billingTools{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.billingRecurring{
+  grid-column:1 / -1;
+}
+.billingRecurringSchedule{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+}
+.billingDocs{
+  align-items:stretch;
+}
+@media (min-width:861px){
+  .billingDocs > .panel{
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .billingDocs > .panel > .panelBody{
+    display:flex;
+    flex:1 1 auto;
+    flex-direction:column;
+    min-height:0;
+  }
+  .billingDocs > .panel > .panelBody > .compactList{
+    flex:1 1 260px;
+    min-height:260px;
+    max-height:none;
+  }
+}
+.quoteLineBuilder{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 86px 118px 44px;
+  gap:8px;
+  align-items:center;
+}
+.manualLineFields{
+  display:grid;
+  grid-column:1 / -1;
+  grid-template-columns:1fr;
+  gap:8px;
+}
+.manualLineFields[hidden]{
+  display:none;
+}
+.quoteDateGrid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.quoteLineList{
+  display:grid;
+  gap:8px;
+}
+.quoteLine{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px;
+  border:1px solid rgba(212,175,55,0.14);
+  border-radius:8px;
+  background:rgba(255,255,255,0.025);
+}
+.quoteLine b,
+.quoteLine span{
+  display:block;
+}
+.quoteLine span{
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.35;
+}
+.quoteLineRight{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex:0 0 auto;
+}
+.billingTotalPreview{
+  color:var(--muted);
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.02em;
+}
+.billingMetrics{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:12px;
+}
+.billingMetric{
+  min-width:0;
+  padding:10px;
+  border:1px solid rgba(212,175,55,0.14);
+  border-radius:8px;
+  background:rgba(255,255,255,0.025);
+}
+.billingMetric b,.billingMetric span{display:block}
+.billingMetric b{font-size:15px;overflow:hidden;text-overflow:ellipsis}
+.billingMetric span{margin-top:4px;color:var(--muted);font-size:10px}
+.billingDocActions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.billingActionList{display:grid;gap:8px;margin-top:16px}
+.billingActionBtn{
+  width:100%;min-height:42px;padding:10px 12px;border-radius:8px;
+  border:1px solid rgba(212,175,55,0.18);background:rgba(255,255,255,0.035);
+  color:var(--txt);font-weight:800;text-align:left;cursor:pointer;
+}
+.billingActionBtn.primary{background:linear-gradient(180deg,#f0ce55,#c9970a);color:#130f05}
+.billingActionBtn.danger{border-color:rgba(255,112,125,.32);color:#ff9aa4}
+.billingPaymentHistory{display:grid;gap:7px;margin-top:12px;max-height:160px;overflow:auto}
+.billingPaymentRow{display:flex;justify-content:space-between;gap:10px;padding:8px;border-bottom:1px solid rgba(212,175,55,.12);font-size:11px}
+.platformTextarea{
+  min-height:78px;
+  resize:vertical;
+  line-height:1.35;
+}
+.billingPlaceholder{
+  display:grid;
+  gap:6px;
+  padding:14px;
+  border:1px dashed rgba(212,175,55,0.24);
+  border-radius:8px;
+  color:var(--muted);
+}
 .adminTools .panelBody{
   display:grid;
   gap:12px;
@@ -639,6 +1351,31 @@ body{
 }
 .compactItem.clickable:active{
   transform:scale(0.995);
+}
+#companyEmployeeList{
+  padding-left:8px;
+}
+.employeeCompactItem{
+  position:relative;
+}
+.employeeStatusDot{
+  position:absolute;
+  left:-8px;
+  top:50%;
+  width:11px;
+  height:11px;
+  border-radius:999px;
+  transform:translateY(-50%);
+  border:1px solid rgba(0,0,0,0.55);
+  box-shadow:0 0 0 3px rgba(255,255,255,0.02), 0 0 14px currentColor;
+}
+.employeeCompactItem.clockedIn .employeeStatusDot{
+  color:#7cff9d;
+  background:#7cff9d;
+}
+.employeeCompactItem.clockedOut .employeeStatusDot{
+  color:#ff3b3b;
+  background:#ff3b3b;
 }
 .compactItemTop{
   display:flex;
@@ -688,6 +1425,175 @@ body{
 .qrModalCard{
   width:min(380px, 100%);
   text-align:center;
+}
+.identityTabs{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:12px 0 14px;
+  padding:5px;
+  border:1px solid rgba(212,175,55,0.14);
+  border-radius:999px;
+  background:rgba(255,255,255,0.025);
+}
+.identityTab{
+  min-height:40px;
+  border:0;
+  border-radius:999px;
+  background:transparent;
+  color:var(--muted);
+  font-weight:950;
+  cursor:pointer;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+.identityTab i{
+  font-size:18px;
+}
+.identityTab.active{
+  color:#111;
+  background:linear-gradient(180deg, var(--gold2), var(--gold));
+  box-shadow:0 10px 28px rgba(212,175,55,0.22);
+}
+.identityPanel[hidden]{
+  display:none;
+}
+.faceEnrollBox{
+  min-height:244px;
+  border:1px solid rgba(212,175,55,0.18);
+  border-radius:14px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(212,175,55,0.10), transparent 42%),
+    rgba(255,255,255,0.025);
+  display:grid;
+  place-items:center;
+  padding:18px;
+  text-align:center;
+}
+.faceEnrollMark{
+  width:82px;
+  height:82px;
+  margin:0 auto 14px;
+  border:1px solid rgba(212,175,55,0.22);
+  border-radius:20px;
+  background:rgba(0,0,0,0.20);
+  display:grid;
+  place-items:center;
+  color:#f6e7b3;
+}
+.faceEnrollMark i{
+  font-size:38px;
+}
+.faceEnrollTitle{
+  font-weight:950;
+  font-size:18px;
+}
+.faceEnrollText{
+  max-width:280px;
+  margin:7px auto 0;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.45;
+}
+.faceActions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+  margin-top:12px;
+}
+.faceActions button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+.faceActions button i{
+  font-size:18px;
+}
+.faceCaptureCard{
+  position:relative;
+  width:min(420px, 100%);
+}
+.faceCaptureStage{
+  position:relative;
+  margin:14px 0;
+  overflow:hidden;
+  border-radius:18px;
+  border:1px solid rgba(212,175,55,0.20);
+  background:#050505;
+  aspect-ratio:1 / 1;
+  box-shadow:0 18px 42px rgba(0,0,0,0.42);
+}
+.faceCaptureStage video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+.faceCaptureStage video[data-facing-mode="user"]{
+  transform:scaleX(-1);
+}
+.faceCaptureStage video[data-facing-mode="environment"]{
+  transform:none;
+}
+.faceCameraSwitch{
+  position:absolute;
+  z-index:4;
+  top:12px;
+  right:12px;
+  width:40px;
+  height:40px;
+  padding:0;
+  border:1px solid rgba(212,175,55,0.38);
+  border-radius:999px;
+  background:rgba(5,5,5,0.82);
+  color:#fff;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font:inherit;
+  font-size:11px;
+  font-weight:900;
+  cursor:pointer;
+  backdrop-filter:blur(8px);
+}
+.faceCameraSwitch i{
+  color:var(--gold2);
+  font-size:18px;
+}
+.faceCameraSwitch:disabled{
+  opacity:0.5;
+  cursor:not-allowed;
+}
+.faceCameraSwitch[hidden]{
+  display:none;
+}
+.faceCaptureRing{
+  position:absolute;
+  inset:12%;
+  border:2px solid rgba(212,175,55,0.58);
+  border-radius:50%;
+  box-shadow:
+    0 0 0 999px rgba(0,0,0,0.20),
+    0 0 34px rgba(212,175,55,0.18);
+  pointer-events:none;
+}
+.faceCaptureHint{
+  position:absolute;
+  left:50%;
+  bottom:14px;
+  transform:translateX(-50%);
+  width:max-content;
+  max-width:calc(100% - 28px);
+  padding:8px 12px;
+  border-radius:999px;
+  border:1px solid rgba(212,175,55,0.18);
+  background:rgba(0,0,0,0.54);
+  color:#f6e7b3;
+  font-size:12px;
+  font-weight:900;
 }
 .qrEmployeeName{
   margin-top:4px;
@@ -760,6 +1666,41 @@ body{
   text-transform:lowercase;
   letter-spacing:.04em;
 }
+.statusPill.billingStatusOverdue{
+  border-color:rgba(255,82,96,0.48);
+  background:rgba(255,82,96,0.10);
+  color:#ff6b78;
+}
+.statusPill.billingStatusSent{
+  border-color:rgba(255,166,61,0.48);
+  background:rgba(255,166,61,0.10);
+  color:#ffb347;
+}
+.statusPill.billingStatusPaid{
+  border-color:rgba(74,222,128,0.48);
+  background:rgba(74,222,128,0.10);
+  color:#66e394;
+}
+.statusPill.billingStatusDraft{
+  border-color:rgba(180,180,190,0.34);
+  background:rgba(180,180,190,0.08);
+  color:#b9bac2;
+}
+.statusPill.billingStatusAccepted{
+  border-color:rgba(74,222,128,0.48);
+  background:rgba(74,222,128,0.10);
+  color:#66e394;
+}
+.statusPill.billingStatusDeclined{
+  border-color:rgba(255,82,96,0.48);
+  background:rgba(255,82,96,0.10);
+  color:#ff6b78;
+}
+.statusPill.billingStatusExpired{
+  border-color:rgba(165,125,211,0.46);
+  background:rgba(165,125,211,0.11);
+  color:#ba91e6;
+}
 .companyCountPill{
   min-width:26px;
   height:26px;
@@ -780,7 +1721,25 @@ body{
   .platformTitle{font-size:20px; line-height:1.08;}
   .platformSub{font-size:12px; line-height:1.28;}
   .platformGrid{grid-template-columns:1fr;}
+  .portfolioGrid{grid-template-columns:1fr;}
+  .portfolioStats{grid-template-columns:repeat(2,minmax(0,1fr));}
   .adminTools{grid-template-columns:1fr;}
+  .billingTools{grid-template-columns:1fr;}
+  .billingRecurringSchedule{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .quoteLineBuilder{
+    grid-template-columns:1fr 1fr;
+  }
+  .quoteLineBuilder select{
+    grid-column:1 / -1;
+  }
+  .quoteLineBuilder .quoteLineAdd{
+    grid-column:1 / -1;
+    width:100%;
+  }
+  .manualLineFields{
+    grid-template-columns:1fr;
+  }
+  .billingMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}
   .detailGrid{grid-template-columns:1fr;}
   .statGrid{grid-template-columns:repeat(2,minmax(0,1fr));}
   .platformActions{justify-content:flex-end; flex:0 0 auto;}
@@ -791,7 +1750,57 @@ body{
   .dataTable.eventsTable td{padding:7px 3px;}
   .dataTable{font-size:11px;}
   .payrollFilters{grid-template-columns:1fr 1fr;}
+  .payrollFilters.withLevy{grid-template-columns:1fr 1fr;}
   .payrollFilters .platformBtn{grid-column:1 / -1;}
+  .payrollRulesGrid{grid-template-columns:1fr 1fr;}
+  .payrollRatesLayout{grid-template-columns:1fr 1fr;}
+  .payrollRatesLayout .payrollRuleField:nth-child(n){
+    grid-column:span 1;
+  }
+  .payrollRuleSection{padding:10px;}
+  .payrollRuleSectionHead{align-items:flex-start; margin-bottom:8px;}
+  .payrollRuleField label{
+    min-height:12px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-size:8.5px;
+    letter-spacing:.065em;
+  }
+  .payrollRuleField label[data-mobile-label]{
+    font-size:0;
+  }
+  .payrollRuleField label[data-mobile-label]::after{
+    content:attr(data-mobile-label);
+    font-size:8.5px;
+    letter-spacing:.065em;
+  }
+  .payrollMethodCards{gap:4px; padding:4px; border-radius:14px;}
+  .payrollMethodCard{min-height:36px; padding:8px 7px; border-radius:11px;}
+  .payrollMethodCard b{font-size:10.5px;}
+  .statutoryToggleGrid{grid-template-columns:1fr 1fr; gap:8px;}
+  .statutoryToggle{min-height:48px; padding:8px 9px; gap:8px;}
+  .statutoryToggle b{font-size:9px;}
+  .statutoryToggle span{font-size:9px;}
+  .statutoryToggle input{width:38px; height:22px;}
+  .statutoryToggle input::after{width:16px; height:16px;}
+  .statutoryToggle input:checked::after{left:18px;}
+  .payrollRulesGrid.two{grid-template-columns:1fr;}
+  .workWeekHead{grid-template-columns:1fr auto; align-items:start;}
+  .workWeekMeta{min-width:0;}
+  .workWeekChips{grid-column:1 / -1; order:3;}
+  .workWeekChip{min-width:68px; padding:7px 9px;}
+  .workWeekRow{grid-template-columns:44px minmax(0,1fr) minmax(0,1fr);}
+  .deductionModalCard{padding:16px;}
+  .deductionStats{grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:12px 0;}
+  .deductionStat{padding:8px 7px; min-width:0;}
+  .deductionStat b{font-size:13px; line-height:1.1; white-space:nowrap;}
+  .deductionStat span{font-size:9px; margin-top:4px;}
+  .deductionList{grid-template-columns:1fr; gap:10px;}
+  .deductionGroupGrid{grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;}
+  .deductionEditRow{padding:9px 8px; gap:6px;}
+  .deductionEditRow b{font-size:9px; letter-spacing:.055em;}
+  .deductionEditRow input{height:34px; font-size:13px; padding:0 9px;}
   .tableScroll.compact{max-height:230px;}
 }
 
@@ -808,7 +1817,7 @@ body{
 
 .accountLine{
   margin-top:7px;
-  display:flex;
+  display:none;
   align-items:center;
   gap:7px;
   min-width:0;
@@ -856,6 +1865,87 @@ body{
   color:rgba(243,242,238,0.86);
   font-size:11px;
   box-shadow:none;
+}
+.companySwitchBtn{
+  min-width:26px;
+  height:26px;
+  padding:0 8px;
+  border-radius:999px;
+  border:1px solid rgba(212,175,55,0.22);
+  background:rgba(255,255,255,0.015);
+  color:rgba(243,242,238,0.82);
+  font-weight:900;
+  font-size:13px;
+  line-height:1;
+  letter-spacing:0;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:none;
+}
+.companySwitchBtn:hover{
+  border-color:rgba(255,193,28,0.58);
+  background:rgba(212,175,55,0.10);
+}
+.companySwitchList{
+  display:grid;
+  gap:8px;
+  margin-top:14px;
+}
+.companySwitchOption{
+  width:100%;
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  gap:10px;
+  align-items:center;
+  border:1px solid rgba(212,175,55,0.14);
+  background:rgba(255,255,255,0.03);
+  color:var(--txt);
+  border-radius:10px;
+  padding:11px;
+  text-align:left;
+  cursor:pointer;
+}
+.companySwitchOption:hover,
+.companySwitchOption.active{
+  border-color:rgba(255,193,28,0.58);
+  background:rgba(212,175,55,0.10);
+}
+.companySwitchIndex{
+  width:28px;
+  height:28px;
+  display:grid;
+  place-items:center;
+  border-radius:999px;
+  border:1px solid rgba(212,175,55,0.24);
+  color:rgba(243,242,238,0.72);
+  font-weight:900;
+  font-size:11px;
+}
+.companySwitchOption.active .companySwitchIndex{
+  color:#171100;
+  background:linear-gradient(180deg,#f3c43b,#bd8a08);
+  border-color:rgba(255,193,28,0.86);
+}
+.companySwitchName{min-width:0;}
+.companySwitchName b{
+  display:block;
+  font-size:13px;
+  line-height:1.2;
+  overflow-wrap:anywhere;
+}
+.companySwitchName span{
+  display:block;
+  margin-top:3px;
+  color:var(--muted);
+  font-size:10px;
+  font-variant:small-caps;
+  text-transform:lowercase;
+}
+.companySwitchCheck{
+  color:var(--gold);
+  font-size:18px;
 }
 .iconBtn{
   width:36px;
@@ -947,9 +2037,100 @@ body{
   font-weight:900;
   cursor:pointer;
 }
+.seg .segStatusBtn{
+  min-width:48px;
+  width:48px;
+  padding:0;
+  display:grid;
+  place-items:center;
+  border-left:1px solid rgba(212,175,55,0.20);
+  border-right:1px solid rgba(212,175,55,0.20);
+  color:rgba(243,242,238,0.86);
+}
+.seg .segStatusBtn[hidden]{
+  display:none;
+}
+.seg .segStatusBtn i{
+  font-size:20px;
+}
+.seg .segStatusBtn:hover{
+  background:rgba(212,175,55,0.10);
+  color:var(--gold);
+}
 .seg button.active{
   background: linear-gradient(180deg, rgba(212,175,55,0.95), rgba(184,134,11,0.92));
   color:#140f06;
+}
+.seg.hasStatus button:not(.segStatusBtn){
+  padding-left:16px;
+  padding-right:16px;
+}
+.teamStatusCard{
+  position:relative;
+}
+.teamStatusSummary{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+  margin:12px 0;
+}
+.teamStatusSummary span{
+  border:1px solid rgba(212,175,55,0.14);
+  border-radius:10px;
+  background:rgba(255,255,255,0.025);
+  color:var(--muted);
+  padding:10px;
+  font-size:12px;
+  font-weight:800;
+}
+.teamStatusSummary b{
+  display:inline-block;
+  margin-right:4px;
+  color:var(--txt);
+  font-size:18px;
+}
+.teamStatusTableWrap{
+  max-height:360px;
+  overflow:auto;
+  border:1px solid rgba(212,175,55,0.10);
+  border-radius:12px;
+}
+.teamStatusTable th,
+.teamStatusTable td{
+  padding:10px 8px;
+}
+.teamStatusTable th:nth-child(1),
+.teamStatusTable td:nth-child(1){
+  width:24px;
+  text-align:center;
+}
+.teamStatusTable th:nth-child(2),
+.teamStatusTable td:nth-child(2){
+  width:78px;
+}
+.teamStatusTable th:nth-child(4),
+.teamStatusTable td:nth-child(4){
+  width:92px;
+  text-align:right;
+}
+.teamStatusDot{
+  display:inline-block;
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  background:#ef4444;
+  box-shadow:0 0 12px rgba(239,68,68,0.35);
+}
+.teamStatusDot.in{
+  background:#66e391;
+  box-shadow:0 0 12px rgba(102,227,145,0.45);
+}
+.teamStatusName{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 
 /* Site Button */
@@ -1041,16 +2222,123 @@ select{
 }
 #reader{ width:100%; height:100%; }
 .camFrame{ position:absolute; inset:0; border:1px solid rgba(212,175,55,0.18); }
-.camBadge{
-  position:absolute; left:14px; top:14px;
-  background: rgba(0,0,0,0.55);
-  padding:10px 12px;
-  border-radius:14px;
-  border:1px solid rgba(212,175,55,0.22);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+.scannerModeSwitch{
+  position:absolute;
+  left:50%;
+  top:12px;
+  transform:translateX(-50%);
+  z-index:5;
+  width:48px;
+  display:grid;
+  grid-template-columns:1fr;
+  gap:0;
+  padding:4px;
+  border-radius:999px;
+  border:1px solid rgba(212,175,55,0.24);
+  background:rgba(7,7,7,0.42);
+  box-shadow:0 10px 24px rgba(0,0,0,0.42), 0 0 22px rgba(212,175,55,0.07);
+  backdrop-filter:blur(12px);
+  overflow:hidden;
+  transition:width .26s cubic-bezier(.2,.8,.2,1), background .2s ease, border-color .2s ease;
 }
-.camBadge b{ font-size:12px; }
-.camBadge small{ display:block; font-size:11px; margin-top:2px; color:var(--muted); }
+.scannerModeSwitch[hidden]{ display:none; }
+.scannerModeSwitch.expanded{
+  width:144px;
+  grid-template-columns:1fr 1fr;
+  background:rgba(7,7,7,0.58);
+  border-color:rgba(212,175,55,0.30);
+}
+.scannerModeSwitch::before{
+  content:"";
+  position:absolute;
+  top:5px;
+  left:5px;
+  width:calc(100% - 10px);
+  height:calc(100% - 10px);
+  border-radius:999px;
+  background:linear-gradient(180deg, #F1D86F 0%, #CFA019 55%, #A87908 100%);
+  box-shadow:0 6px 18px rgba(212,175,55,0.36), inset 0 1px 0 rgba(255,255,255,0.32);
+  transition:transform .24s cubic-bezier(.2,.8,.2,1), width .24s cubic-bezier(.2,.8,.2,1);
+}
+.scannerModeSwitch.expanded::before{ width:calc(50% - 5px); }
+.scannerModeSwitch.expanded[data-mode="qr"]::before{ transform:translateX(100%); }
+.scannerModeBtn{
+  position:relative;
+  z-index:1;
+  min-height:34px;
+  border:0;
+  border-radius:999px;
+  background:transparent;
+  color:rgba(243,242,238,0.72);
+  font-weight:950;
+  font-size:11px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  cursor:pointer;
+  transition:color .18s ease, transform .18s ease;
+  -webkit-tap-highlight-color:transparent;
+}
+.scannerModeSwitch:not(.expanded) .scannerModeBtn:not(.active){ display:none; }
+.scannerModeSwitch:not(.expanded) .scannerModeBtn span{ display:none; }
+.scannerModeSwitch:not(.expanded) .scannerModeBtn{ min-height:34px; width:40px; }
+.scannerModeBtn i{ font-size:17px; }
+.scannerModeBtn span{
+  max-width:42px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.scannerModeBtn.active{ color:#120e05; }
+.scannerModeBtn:active{ transform:scale(.97); }
+.scannerGuide{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  z-index:4;
+  width:min(280px, calc(100% - 56px));
+  padding:16px 18px;
+  border-radius:18px;
+  border:1px solid rgba(212,175,55,0.26);
+  background:rgba(7,7,7,0.68);
+  box-shadow:0 20px 44px rgba(0,0,0,0.55), 0 0 34px rgba(212,175,55,0.10);
+  backdrop-filter:blur(14px);
+  text-align:center;
+  pointer-events:none;
+  opacity:1;
+  transition:opacity .45s ease, transform .45s ease;
+}
+.scannerGuide.hidden{
+  opacity:0;
+  transform:translate(-50%,-46%);
+}
+.scannerGuide i{
+  width:42px;
+  height:42px;
+  display:inline-grid;
+  place-items:center;
+  margin-bottom:10px;
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(212,175,55,0.28), rgba(184,134,11,0.14));
+  color:#f4d86d;
+  border:1px solid rgba(212,175,55,0.28);
+  font-size:22px;
+}
+.scannerGuide b{
+  display:block;
+  color:var(--txt);
+  font-size:15px;
+  font-weight:950;
+}
+.scannerGuide small{
+  display:block;
+  margin-top:4px;
+  color:var(--muted);
+  font-size:12px;
+  font-weight:750;
+}
 
 /* Subtle scan overlay */
 .scanBox{
@@ -1063,6 +2351,12 @@ select{
   border:1px solid rgba(212,175,55,0.38);
   box-shadow: 0 0 0 999px rgba(0,0,0,0.22) inset, 0 0 35px rgba(212,175,55,0.08);
   pointer-events:none;
+  transition:border-radius .24s ease, width .24s ease, box-shadow .24s ease;
+}
+.scanBox.faceMode{
+  width:62%;
+  border-radius:999px;
+  box-shadow:0 0 0 999px rgba(0,0,0,0.20) inset, 0 0 42px rgba(212,175,55,0.10);
 }
 
 /* Queue */
@@ -1468,6 +2762,10 @@ select{
                   <option value="employee">Employee</option>
                   <option value="viewer">Viewer</option>
                 </select>
+                <label class="statutoryToggle" for="companyUserBillingAccess">
+                  <span><b>Billing access</b><span>Requires an owner or admin role and the company Billing add-on.</span></span>
+                  <input id="companyUserBillingAccess" type="checkbox"/>
+                </label>
                 <button id="btnAddCompanyUser" class="platformBtn" type="submit">Invite User To Company</button>
               </form>
             </div>
@@ -1517,6 +2815,38 @@ select{
   </div>
 </main>
 
+<main class="platformShell portfolioShell" id="portfolioShell" hidden>
+  <div class="platformWrap">
+    <div class="platformTop">
+      <div>
+        <div class="platformBrand">
+          <div class="brandBadge"><i class="ph ph-buildings"></i></div>
+          <div>
+            <div class="platformTitle">Business Portfolio</div>
+            <div class="platformSub">Choose which company workspace to open.</div>
+            <div class="mutedText" id="portfolioUserLabel">Signed in</div>
+          </div>
+        </div>
+      </div>
+      <div class="platformActions">
+        <button id="btnPortfolioLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
+          <i class="ph ph-sign-out"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panelHead">
+        <div class="panelTitle">Companies</div>
+        <span class="statusPill companyCountPill" id="portfolioCompanyCount">0</span>
+      </div>
+      <div class="panelBody">
+        <div id="portfolioCompanyList" class="portfolioGrid"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
 <main class="platformShell companyAdminShell" id="companyAdminShell" hidden>
   <div class="platformWrap">
     <div class="platformTop">
@@ -1525,14 +2855,20 @@ select{
           <div class="brandBadge"><i class="ph ph-buildings"></i></div>
           <div>
             <div class="platformTitle">Company Dashboard</div>
-            <div class="platformSub">Manage your company setup.</div>
+            <div class="platformSub">Manage your company.</div>
             <div class="mutedText" id="companyAdminUserLabel">Signed in</div>
           </div>
         </div>
       </div>
       <div class="platformActions">
+        <button id="btnCompanyAdminPortfolio" class="miniIconBtn" type="button" title="Switch company" aria-label="Switch company" hidden>
+          <i class="ph ph-buildings"></i>
+        </button>
         <button id="btnCompanyAdminEmployeeDashboard" class="miniIconBtn" type="button" title="My dashboard" aria-label="My dashboard" hidden>
           <i class="ph ph-user"></i>
+        </button>
+        <button id="btnOpenBilling" class="miniIconBtn" type="button" title="Open billing" aria-label="Open billing" hidden>
+          <i class="ph ph-receipt"></i>
         </button>
         <button id="btnOpenClocking" class="miniIconBtn" type="button" title="Open clocking" aria-label="Open clocking">
           <i class="ph ph-fingerprint"></i>
@@ -1554,11 +2890,11 @@ select{
             </div>
           </div>
           <div class="platformActions">
+            <button id="btnCompanyAdminSwitch" class="companySwitchBtn" type="button" title="Switch company" aria-label="Switch company">1</button>
             <button id="btnUploadCompanyLogo" class="miniIconBtn" type="button" title="Upload company logo" aria-label="Upload company logo">
               <i class="ph ph-plus"></i>
             </button>
             <input id="companyLogoInput" class="hiddenFileInput" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"/>
-            <select id="companyAdminSelect" class="platformSelect" style="max-width:260px;" aria-label="Company workspace"></select>
           </div>
         </div>
         <div class="panelBody">
@@ -1582,13 +2918,142 @@ select{
           </button>
         </div>
         <div class="panelBody">
+          <details class="payrollRulesDetails" id="payrollRulesDetails">
+            <summary>
+              <b>Payroll Rules</b>
+              <span class="payrollRulesStatus">
+                <span id="payrollRulesSummary" class="payrollRulesPill">Cycle Only</span>
+                <span class="payrollRulesToggle" aria-hidden="true">
+                  <i class="ph ph-pencil-simple editIcon"></i>
+                  <i class="ph ph-x closeIcon"></i>
+                </span>
+              </span>
+            </summary>
+            <form class="payrollRulesForm" id="payrollRulesForm">
+              <input id="ruleOvertimeMethod" type="hidden" value="cycle_only"/>
+              <div class="payrollMethodCards" role="radiogroup" aria-label="Overtime method">
+                <button class="payrollMethodCard" type="button" data-payroll-method="cycle_only" role="radio" aria-checked="true">
+                  <b>Cycle Only</b>
+                  <span>Overtime starts after the weekly, fortnightly, or monthly cap.</span>
+                </button>
+                <button class="payrollMethodCard" type="button" data-payroll-method="daily_cycle" role="radio" aria-checked="false">
+                  <b>Daily + Cycle</b>
+                  <span>Daily thresholds apply first, then the cycle cap balances the period.</span>
+                </button>
+                <button class="payrollMethodCard" type="button" data-payroll-method="day_rules" role="radio" aria-checked="false">
+                  <b>Day Rules</b>
+                  <span>Use each day of the week as normal, OT1, or OT2.</span>
+                </button>
+              </div>
+              <div class="payrollRuleSection specialDaysSection">
+                <div class="payrollRuleSectionHead">
+                  <div>
+                    <b>Special Days</b>
+                    <span>Weekend, holiday, and daily templates.</span>
+                  </div>
+                </div>
+                <div class="workWeekBlock">
+                  <div class="workWeekHead">
+                    <div class="workWeekMeta">
+                      <div class="workWeekIcon" aria-hidden="true">
+                        <i class="ph ph-clock-countdown"></i>
+                      </div>
+                      <div>
+                        <b id="workWeekTitle">Weekend / Holiday Rules</b>
+                        <span id="workWeekSubtitle">Set the special day rules that still apply after the cycle cap.</span>
+                      </div>
+                    </div>
+                    <div id="workWeekSummary" class="workWeekChips"></div>
+                    <button id="btnToggleWorkWeekEditor" class="miniIconBtn" type="button" title="Edit work week" aria-label="Edit work week">
+                      <i class="ph ph-calendar-dots editIcon"></i>
+                      <i class="ph ph-x closeIcon"></i>
+                    </button>
+                  </div>
+                  <div id="workWeekEditor" class="workWeekEditor" hidden></div>
+                </div>
+              </div>
+              <div class="payrollRuleSection cycleOnly">
+                <div class="payrollRuleSectionHead">
+                  <div>
+                    <b>Cycle Limits</b>
+                    <span>Normal hours before cycle overtime starts.</span>
+                  </div>
+                </div>
+                <div class="payrollRulesGrid">
+                  <div class="payrollRuleField">
+                    <label for="ruleWeeklyHours">Weekly normal hrs</label>
+                    <input id="ruleWeeklyHours" class="platformInput" inputmode="decimal" placeholder="45"/>
+                  </div>
+                  <div class="payrollRuleField">
+                    <label for="ruleFortnightlyHours" data-mobile-label="Fortnightly hrs">Fortnightly normal hrs</label>
+                    <input id="ruleFortnightlyHours" class="platformInput" inputmode="decimal" placeholder="90"/>
+                  </div>
+                  <div class="payrollRuleField">
+                    <label for="ruleMonthlyHours" data-mobile-label="Monthly hrs">Monthly normal hrs</label>
+                    <input id="ruleMonthlyHours" class="platformInput" inputmode="decimal" placeholder="195"/>
+                  </div>
+                </div>
+              </div>
+              <div class="payrollRuleSection">
+                <div class="payrollRuleSectionHead">
+                  <div>
+                    <b>Rates & Deductions</b>
+                    <span>Overtime multipliers, holidays, and lunch.</span>
+                  </div>
+                </div>
+                <div class="payrollRatesLayout">
+                  <div class="payrollRuleField">
+                    <label for="ruleOt1Multiplier" data-mobile-label="OT1">OT1 multiplier</label>
+                    <input id="ruleOt1Multiplier" class="platformInput" inputmode="decimal" placeholder="1.5"/>
+                  </div>
+                  <div class="payrollRuleField">
+                    <label for="ruleOt2Multiplier" data-mobile-label="OT2">OT2 multiplier</label>
+                    <input id="ruleOt2Multiplier" class="platformInput" inputmode="decimal" placeholder="2"/>
+                  </div>
+                  <div class="payrollRuleField">
+                    <label for="ruleHolidayHours" data-mobile-label="Holiday hrs">Holiday standard hrs</label>
+                    <input id="ruleHolidayHours" class="platformInput" inputmode="decimal" placeholder="8"/>
+                  </div>
+                  <div class="payrollRuleField">
+                    <label for="rulePublicHoliday">Public holiday</label>
+                    <select id="rulePublicHoliday" class="platformSelect">
+                      <option value="ot2_with_topup">OT2 + Top-Up</option>
+                      <option value="ot2">OT2</option>
+                      <option value="threshold">Threshold</option>
+                      <option value="normal">Normal</option>
+                    </select>
+                  </div>
+                  <div class="payrollRuleField">
+                    <label for="ruleLunchMinutes" data-mobile-label="Lunch mins">Lunch deduction mins</label>
+                    <input id="ruleLunchMinutes" class="platformInput" inputmode="numeric" placeholder="0"/>
+                  </div>
+                </div>
+                <div class="statutoryToggleGrid">
+                  <label class="statutoryToggle" for="ruleCalculateUif">
+                    <span><b>Calculate UIF</b><span>Employee UIF deduction</span></span>
+                    <input id="ruleCalculateUif" type="checkbox"/>
+                  </label>
+                  <label class="statutoryToggle" for="ruleCalculatePaye">
+                    <span><b>Calculate PAYE</b><span>Tax estimate from gross pay</span></span>
+                    <input id="ruleCalculatePaye" type="checkbox"/>
+                  </label>
+                </div>
+              </div>
+              <button id="btnSavePayrollRules" class="platformBtn" type="submit">Save Payroll Rules</button>
+            </form>
+          </details>
           <div class="payrollFilters">
             <input id="payrollStartDate" class="platformInput" type="date" aria-label="Payroll start date"/>
             <input id="payrollEndDate" class="platformInput" type="date" aria-label="Payroll end date"/>
+            <select id="payrollLevyWeeks" class="platformSelect" aria-label="NBCEI levy period" hidden>
+              <option value="">Choose levy period</option>
+              <option value="4">4-week levy period</option>
+              <option value="5">5-week levy period</option>
+            </select>
             <button id="btnRunPayroll" class="platformBtn inline" type="button">Run Payroll</button>
           </div>
           <div class="statGrid" style="margin-bottom:12px;">
-            <div class="stat"><b id="payrollTotalHours">0.00</b><span>Total Hours</span></div>
+            <div class="stat"><b id="payrollTotalHours">0.00</b><span id="payrollTotalHoursLabel">Total Hours</span></div>
             <div class="stat"><b id="payrollTotalGross">R0.00</b><span>Gross Pay</span></div>
           </div>
           <div class="tableScroll">
@@ -1628,6 +3093,7 @@ select{
                 <input id="companyEmployeeIdNumber" class="platformInput" placeholder="ID number" autocomplete="off"/>
                 <select id="companyEmployeePayType" class="platformSelect">
                   <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
                   <option value="monthly">Monthly</option>
                 </select>
                 <input id="companyEmployeeRate" class="platformInput" inputmode="decimal" placeholder="Rate" autocomplete="off"/>
@@ -1636,6 +3102,24 @@ select{
                   <option value="weekly">Weekly</option>
                   <option value="fortnightly">Fortnightly</option>
                   <option value="monthly">Monthly</option>
+                </select>
+                <select id="companyEmployeeNbceiDesignation" class="platformSelect" aria-label="NBCEI designation" hidden>
+                  <option value="">Choose NBCEI designation</option>
+                  <option value="43">43 - Elconop 3</option>
+                  <option value="44">44 - Elconop 2</option>
+                  <option value="48">48 - Elconop 1</option>
+                  <option value="49">49 - Electrical Assistant</option>
+                  <option value="none">Not subject to NBCEI levies</option>
+                </select>
+                <select id="companyEmployeeSbfMember" class="platformSelect" aria-label="SBF membership" hidden>
+                  <option value="">Choose SBF membership</option>
+                  <option value="true">SBF member - Yes</option>
+                  <option value="false">SBF member - No</option>
+                </select>
+                <select id="companyEmployeeSaewaMember" class="platformSelect" aria-label="SAEWA membership" hidden>
+                  <option value="">Choose SAEWA membership</option>
+                  <option value="true">SAEWA member - Yes</option>
+                  <option value="false">SAEWA member - No</option>
                 </select>
                 <select id="companyEmployeeActive" class="platformSelect">
                   <option value="true">Active</option>
@@ -1740,15 +3224,74 @@ select{
 
   <div class="modal" id="employeeQrModal" aria-hidden="true">
     <div class="modalCard qrModalCard">
-      <div class="brandBadge" style="margin:0 auto 10px;"><i class="ph ph-qr-code"></i></div>
-      <div class="modalTitle">Employee QR</div>
+      <div class="brandBadge" style="margin:0 auto 10px;"><i id="employeeIdentityIcon" class="ph ph-qr-code"></i></div>
+      <div class="modalTitle">Employee Identity</div>
       <div class="qrEmployeeName" id="employeeQrName">Employee</div>
       <div class="qrEmployeeId" id="employeeQrId">E000</div>
-      <div class="qrBox" id="employeeQrBox"></div>
-      <div class="qrHint">Scan this code in the clocking screen.</div>
+      <div class="identityTabs" role="tablist" aria-label="Employee identity type">
+        <button id="employeeIdentityQrTab" class="identityTab active" type="button" role="tab" aria-selected="true">
+          <i class="ph ph-qr-code"></i>
+          QR Code
+        </button>
+        <button id="employeeIdentityFaceTab" class="identityTab" type="button" role="tab" aria-selected="false">
+          <i class="ph ph-fingerprint"></i>
+          Face
+        </button>
+      </div>
+      <div id="employeeQrPanel" class="identityPanel">
+        <div class="qrBox" id="employeeQrBox"></div>
+        <div class="qrHint">Scan this code in the clocking screen.</div>
+      </div>
+      <div id="employeeFacePanel" class="identityPanel" hidden>
+        <div class="faceEnrollBox">
+          <div>
+            <div class="faceEnrollMark"><i class="ph ph-fingerprint"></i></div>
+            <div class="faceEnrollTitle" id="employeeFaceStatus">No face enrolled</div>
+            <div class="faceEnrollText">Face enrolment will store a secure employee reference photo and, later, a face template for matching.</div>
+          </div>
+        </div>
+        <div class="faceActions">
+          <button id="btnEnrollFace" class="platformBtn" type="button"><i class="ph ph-camera"></i><span>Enroll Face</span></button>
+          <button id="btnRemoveFace" class="btnGhost" type="button"><i class="ph ph-trash"></i><span>Remove</span></button>
+        </div>
+      </div>
       <div class="modalActions">
         <button id="btnCloseEmployeeQr" class="btnGhost" type="button">Close</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal" id="faceCaptureModal" aria-hidden="true">
+    <div class="modalCard faceCaptureCard">
+      <button id="btnCloseFaceCapture" class="modalCloseIcon" type="button" title="Close" aria-label="Close">
+        <i class="ph ph-x"></i>
+      </button>
+      <div class="modalTitle">Enroll Face</div>
+      <div class="modalSub" id="faceCaptureEmployee">Employee</div>
+      <div class="faceCaptureStage">
+        <video id="faceCaptureVideo" autoplay playsinline muted></video>
+        <canvas id="faceCaptureCanvas" hidden></canvas>
+        <button id="btnSwitchFaceCamera" class="faceCameraSwitch" type="button" aria-label="Switch to back camera" title="Switch camera">
+          <i class="ph ph-camera-rotate"></i>
+        </button>
+        <div class="faceCaptureRing"></div>
+        <div class="faceCaptureHint">Center face inside the circle</div>
+      </div>
+      <button id="btnCaptureFace" class="platformBtn" type="button">
+        <i class="ph ph-camera"></i>
+        <span>Capture Reference Photo</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="modal sheetModal" id="companySwitchModal" aria-hidden="true">
+    <div class="modalCard modalSheet">
+      <button id="btnCloseCompanySwitch" class="modalCloseIcon" type="button" title="Close" aria-label="Close">
+        <i class="ph ph-x"></i>
+      </button>
+      <div class="modalTitle">Switch Company</div>
+      <div class="modalSub">Choose which company workspace to open.</div>
+      <div class="companySwitchList" id="companySwitchList"></div>
     </div>
   </div>
 
@@ -1773,7 +3316,10 @@ select{
   </div>
 
   <div class="modal" id="payrollBreakdownModal" aria-hidden="true">
-    <div class="modalCard">
+    <div class="modalCard payrollBreakdownCard">
+      <button id="btnViewTimesheet" class="modalCloseIcon" type="button" title="View Timesheet" aria-label="View employee timesheet">
+        <i class="ph ph-calendar-dots"></i>
+      </button>
       <div class="modalTitle">Payroll Breakdown</div>
       <div class="modalSub" id="payrollBreakdownEmployee">Employee</div>
       <div class="breakdownGrid">
@@ -1809,13 +3355,61 @@ select{
     </div>
   </div>
 
+  <div class="modal" id="timesheetModal" aria-hidden="true">
+    <div class="modalCard timesheetCard">
+      <button id="btnCloseTimesheetIcon" class="modalCloseIcon" type="button" title="Close" aria-label="Close timesheet"><i class="ph ph-x"></i></button>
+      <div class="timesheetHeader">
+        <img id="timesheetLogo" class="timesheetLogo" alt="Company logo" hidden>
+        <div><div class="modalTitle">Employee Timesheet</div><div class="modalSub" id="timesheetCompany">Company</div></div>
+      </div>
+      <div class="timesheetMeta">
+        <div><span>Employee</span><b id="timesheetEmployee">-</b></div>
+        <div><span>Period</span><b id="timesheetPeriod">-</b></div>
+        <div><span>Generated</span><b id="timesheetGenerated">-</b></div>
+      </div>
+      <div class="timesheetTableWrap">
+        <table class="timesheetTable"><thead><tr><th>Day</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Break</th><th>Hours Worked</th></tr></thead><tbody id="timesheetBody"><tr><td colspan="6">Preparing timesheet...</td></tr></tbody></table>
+      </div>
+      <div id="timesheetNotice" class="timesheetNotice"></div>
+      <div id="timesheetTotal" class="timesheetTotal">Total hours: 0 minutes</div>
+      <div class="timesheetActions">
+        <button id="btnPrintTimesheet" class="btnPrimary" type="button">Print</button>
+        <button id="btnDownloadTimesheet" class="btnPrimary" type="button">Download PDF</button>
+        <button id="btnCloseTimesheet" class="btnGhost" type="button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="payrollDeductionsModal" aria-hidden="true">
+    <div class="modalCard deductionModalCard">
+      <button id="btnEditDeductions" class="deductionEditBtn" type="button" title="Edit deductions" aria-label="Edit deductions">
+        <i class="ph ph-pencil-simple"></i>
+      </button>
+      <div class="modalTitle">Payroll Adjustments</div>
+      <div class="modalSub" id="payrollDeductionsEmployee">Employee</div>
+      <div class="deductionStats">
+        <div class="deductionStat"><b id="deductionGrossPay">R0.00</b><span>Gross Pay</span></div>
+        <div class="deductionStat"><b id="adjustmentTotal">R0.00</b><span>Adjustments</span></div>
+        <div class="deductionStat"><b id="deductionTotal">R0.00</b><span>Deductions</span></div>
+        <div class="deductionStat"><b id="deductionNetPay">R0.00</b><span>Net Pay</span></div>
+      </div>
+      <div id="deductionList" class="deductionList"></div>
+      <form id="deductionForm" class="deductionForm">
+        <select id="deductionType" class="platformSelect" aria-label="Deduction type" hidden></select>
+        <input id="deductionDescription" class="platformInput" placeholder="Description" hidden/>
+        <input id="deductionAmount" class="platformInput" inputmode="decimal" placeholder="Amount" hidden/>
+        <button id="btnSaveDeduction" class="platformBtn" type="submit">Save Payroll Changes</button>
+      </form>
+    </div>
+  </div>
+
   <div class="modal sheetModal" id="payslipModal" aria-hidden="true">
     <div class="modalCard modalSheet">
       <button id="btnClosePayslip" class="modalCloseIcon" type="button" title="Close" aria-label="Close">
         <i class="ph ph-x"></i>
       </button>
       <div class="modalTitle">Generate Payslip</div>
-      <div class="modalSub">Choose an employee from the current payroll run.</div>
+      <div class="modalSub" id="payslipModalSub">Choose an employee from the current payroll run.</div>
       <div class="platformForm payslipSheetForm">
         <select id="payslipEmployeeSelect" class="platformSelect" aria-label="Payslip employee"></select>
         <button id="btnGeneratePayslip" class="platformBtn" type="button">Generate Payslip</button>
@@ -1823,6 +3417,363 @@ select{
     </div>
   </div>
 </main>
+
+<main class="platformShell billingShell" id="billingShell" hidden>
+  <div class="platformWrap">
+    <div class="platformTop">
+      <div>
+        <div class="platformBrand">
+          <div class="brandBadge"><i class="ph ph-receipt"></i></div>
+          <div>
+            <div class="platformTitle">Shiftly Billing</div>
+            <div class="platformSub">Clients, items, quotes, and invoices.</div>
+            <div class="mutedText" id="billingUserLabel">Signed in</div>
+          </div>
+        </div>
+      </div>
+      <div class="platformActions">
+        <button id="btnBillingBack" class="miniIconBtn" type="button" title="Back to company dashboard" aria-label="Back to company dashboard">
+          <i class="ph ph-buildings"></i>
+        </button>
+        <button id="btnBillingClocking" class="miniIconBtn" type="button" title="Open clocking" aria-label="Open clocking">
+          <i class="ph ph-fingerprint"></i>
+        </button>
+        <button id="btnBillingLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
+          <i class="ph ph-sign-out"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="platformStack">
+      <div class="panel">
+        <div class="panelHead">
+          <div class="companyProfileHead">
+            <div class="companyLogoMark" id="billingCompanyLogoMark"><i class="ph ph-buildings"></i></div>
+            <div class="billingCompanyCopy">
+              <div class="billingCompanyTitleRow">
+                <div class="panelTitle" id="billingCompanyTitle">Company</div>
+              </div>
+              <div class="mutedText" id="billingCompanySub">Billing workspace.</div>
+            </div>
+          </div>
+          <div class="platformActions">
+            <button id="btnToggleBillingProfile" class="miniIconBtn billingSettingsBtn" type="button" title="Edit document settings" aria-label="Edit document settings" data-open-icon="ph-gear">
+              <i class="ph ph-gear"></i>
+            </button>
+          </div>
+        </div>
+        <div class="panelBody">
+          <div class="statGrid">
+            <div class="stat"><b id="billingStatClients">0</b><span>Clients</span></div>
+            <div class="stat"><b id="billingStatItems">0</b><span>Items</span></div>
+            <div class="stat"><b id="billingStatQuotes">0</b><span>Quotes</span></div>
+            <div class="stat"><b id="billingStatInvoices">0</b><span>Invoices</span></div>
+          </div>
+          <div id="billingProfileFormBox" class="collapseBox billingProfileInline" hidden>
+            <form id="billingProfileForm" class="platformForm">
+              <input id="billingProfileRegistration" class="platformInput" placeholder="Registration number"/>
+              <input id="billingProfileVat" class="platformInput" placeholder="VAT number"/>
+              <input id="billingProfileEmail" class="platformInput" type="email" placeholder="Company email"/>
+              <input id="billingProfilePhone" class="platformInput" placeholder="Company phone"/>
+              <textarea id="billingProfileAddress" class="platformInput platformTextarea" placeholder="Company address"></textarea>
+              <input id="billingProfileBank" class="platformInput" placeholder="Bank name"/>
+              <input id="billingProfileAccountName" class="platformInput" placeholder="Account name"/>
+              <input id="billingProfileAccountNumber" class="platformInput" placeholder="Account number"/>
+              <input id="billingProfileBranch" class="platformInput" placeholder="Branch code"/>
+              <input id="billingProfileAccountType" class="platformInput" placeholder="Account type"/>
+              <input id="billingProfileTerms" class="platformInput" type="number" min="0" max="365" placeholder="Payment terms (days)" value="30"/>
+              <textarea id="billingProfileNotes" class="platformInput platformTextarea" placeholder="Default invoice notes"></textarea>
+              <button class="platformBtn" type="submit">Save Document Settings</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div class="billingTools billingDocs">
+        <div class="panel">
+          <div class="panelHead">
+            <div>
+              <div class="panelTitle">Invoices</div>
+              <div class="mutedText">Create invoices directly or convert accepted quotes.</div>
+            </div>
+            <div class="platformActions">
+              <span class="statusPill" id="billingInvoiceCount">0</span>
+              <button id="btnToggleBillingInvoiceForm" class="miniIconBtn" type="button" title="Add invoice" aria-label="Add invoice">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="billingInvoiceFormBox" class="collapseBox" hidden>
+              <form class="platformForm quoteForm" id="billingInvoiceForm" style="margin-bottom:14px;">
+                <input id="billingManualInvoiceNumber" class="platformInput" placeholder="Invoice number" autocomplete="off"/>
+                <select id="billingManualInvoiceClient" class="platformSelect" aria-label="Invoice client"></select>
+                <div class="quoteDateGrid">
+                  <input id="billingManualInvoiceIssueDate" class="platformInput" type="date" aria-label="Issue date"/>
+                  <input id="billingManualInvoiceDueDate" class="platformInput" type="date" aria-label="Due date"/>
+                </div>
+                <select id="billingManualInvoiceStatus" class="platformSelect">
+                  <option value="draft">Draft</option>
+                  <option value="sent">Sent</option>
+                </select>
+                <textarea id="billingManualInvoiceNotes" class="platformInput platformTextarea" placeholder="Notes"></textarea>
+                <div class="quoteLineBuilder">
+                  <select id="billingManualInvoiceItemSelect" class="platformSelect" aria-label="Invoice item"></select>
+                  <div id="billingManualInvoiceManualFields" class="manualLineFields" hidden>
+                    <input id="billingManualInvoiceManualDescription" class="platformInput" placeholder="Manual item description" autocomplete="off"/>
+                    <input id="billingManualInvoiceManualPrice" class="platformInput" inputmode="decimal" placeholder="Rate"/>
+                  </div>
+                  <input id="billingManualInvoiceQty" class="platformInput" inputmode="decimal" placeholder="Qty" value="1"/>
+                  <input id="billingManualInvoiceDiscount" class="platformInput" inputmode="decimal" placeholder="Discount %" value="0"/>
+                  <button id="btnAddBillingManualInvoiceLine" class="miniIconBtn quoteLineAdd" type="button" title="Add line" aria-label="Add line">
+                    <i class="ph ph-plus"></i>
+                  </button>
+                </div>
+                <div id="billingManualInvoiceLineList" class="quoteLineList"></div>
+                <div id="billingManualInvoiceTotalPreview" class="billingTotalPreview">Subtotal R0.00 - VAT R0.00 - Total R0.00</div>
+                <button id="btnSaveBillingManualInvoice" class="platformBtn" type="submit">Save Invoice</button>
+              </form>
+            </div>
+            <div class="billingMetrics">
+              <div class="billingMetric"><b id="billingMetricRevenue">R0.00</b><span>Monthly Revenue</span></div>
+              <div class="billingMetric"><b id="billingMetricOutstandingValue">R0.00</b><span>Outstanding Value</span></div>
+              <div class="billingMetric"><b id="billingMetricRecurringRevenue">R0.00</b><span>Recurring Revenue</span></div>
+              <div class="billingMetric"><b id="billingMetricDraft">0</b><span>Draft Invoices</span></div>
+              <div class="billingMetric"><b id="billingMetricOutstanding">0</b><span>Outstanding</span></div>
+              <div class="billingMetric"><b id="billingMetricPaid">0</b><span>Paid</span></div>
+            </div>
+            <div id="billingInvoiceList" class="compactList"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div>
+              <div class="panelTitle">Quotes</div>
+              <div class="mutedText">Build quotes from clients and items.</div>
+            </div>
+            <div class="platformActions">
+              <span class="statusPill" id="billingQuoteCount">0</span>
+              <button id="btnToggleBillingQuoteForm" class="miniIconBtn" type="button" title="Add quote" aria-label="Add quote">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="billingQuoteFormBox" class="collapseBox" hidden>
+              <form class="platformForm quoteForm" id="billingQuoteForm" style="margin-bottom:14px;">
+                <input id="billingQuoteNumber" class="platformInput" placeholder="Quote number" autocomplete="off"/>
+                <select id="billingQuoteClient" class="platformSelect" aria-label="Quote client"></select>
+                <input id="billingQuoteManualClientName" class="platformInput" placeholder="Company name" autocomplete="off" hidden/>
+                <div class="quoteDateGrid">
+                  <input id="billingQuoteIssueDate" class="platformInput" type="date" aria-label="Issue date"/>
+                  <input id="billingQuoteExpiryDate" class="platformInput" type="date" aria-label="Expiry date"/>
+                </div>
+                <select id="billingQuoteStatus" class="platformSelect">
+                  <option value="draft">Draft</option>
+                  <option value="sent">Sent</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="declined">Declined</option>
+                  <option value="expired">Expired</option>
+                </select>
+                <textarea id="billingQuoteNotes" class="platformInput platformTextarea" placeholder="Notes"></textarea>
+                <div class="quoteLineBuilder">
+                  <select id="billingQuoteItemSelect" class="platformSelect" aria-label="Quote item"></select>
+                  <div id="billingQuoteManualFields" class="manualLineFields" hidden>
+                    <input id="billingQuoteManualDescription" class="platformInput" placeholder="Manual item description" autocomplete="off"/>
+                    <input id="billingQuoteManualPrice" class="platformInput" inputmode="decimal" placeholder="Rate"/>
+                  </div>
+                  <input id="billingQuoteQty" class="platformInput" inputmode="decimal" placeholder="Qty" value="1"/>
+                  <input id="billingQuoteDiscount" class="platformInput" inputmode="decimal" placeholder="Discount %" value="0"/>
+                  <button id="btnAddBillingQuoteLine" class="miniIconBtn quoteLineAdd" type="button" title="Add line" aria-label="Add line">
+                    <i class="ph ph-plus"></i>
+                  </button>
+                </div>
+                <div id="billingQuoteLineList" class="quoteLineList"></div>
+                <div id="billingQuoteTotalPreview" class="billingTotalPreview">Subtotal R0.00 - VAT R0.00 - Total R0.00</div>
+                <button id="btnSaveBillingQuote" class="platformBtn" type="submit">Save Quote</button>
+              </form>
+            </div>
+            <div id="billingQuoteList" class="compactList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="billingTools">
+        <div class="panel billingRecurring">
+          <div class="panelHead">
+            <div>
+              <div class="panelTitle">Recurring Invoices</div>
+              <div class="mutedText">Automatically create monthly draft invoices for your review.</div>
+            </div>
+            <div class="platformActions">
+              <span class="statusPill" id="billingRecurringCount">0</span>
+              <button id="btnToggleBillingRecurringForm" class="miniIconBtn" type="button" title="Add recurring invoice" aria-label="Add recurring invoice">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="billingRecurringFormBox" class="collapseBox" hidden>
+              <form class="platformForm quoteForm" id="billingRecurringForm" style="margin-bottom:14px;">
+                <input id="billingRecurringName" class="platformInput" placeholder="Template name e.g. Monthly support" autocomplete="off"/>
+                <select id="billingRecurringClient" class="platformSelect" aria-label="Recurring invoice client"></select>
+                <div class="billingRecurringSchedule">
+                  <input id="billingRecurringIssueDay" class="platformInput" type="number" min="1" max="31" value="1" placeholder="Invoice day" aria-label="Invoice day of month"/>
+                  <input id="billingRecurringDueDays" class="platformInput" type="number" min="0" max="365" value="30" placeholder="Due after days" aria-label="Payment terms in days"/>
+                  <input id="billingRecurringStartDate" class="platformInput" type="date" aria-label="Start date"/>
+                  <input id="billingRecurringEndDate" class="platformInput" type="date" aria-label="Optional end date"/>
+                </div>
+                <select id="billingRecurringActive" class="platformSelect">
+                  <option value="true">Active</option>
+                  <option value="false">Paused</option>
+                </select>
+                <textarea id="billingRecurringNotes" class="platformInput platformTextarea" placeholder="Invoice notes"></textarea>
+                <div class="quoteLineBuilder">
+                  <select id="billingRecurringItemSelect" class="platformSelect" aria-label="Recurring invoice item"></select>
+                  <div id="billingRecurringManualFields" class="manualLineFields" hidden>
+                    <input id="billingRecurringManualDescription" class="platformInput" placeholder="Manual item description" autocomplete="off"/>
+                    <input id="billingRecurringManualPrice" class="platformInput" inputmode="decimal" placeholder="Monthly rate"/>
+                  </div>
+                  <input id="billingRecurringQty" class="platformInput" inputmode="decimal" placeholder="Qty" value="1"/>
+                  <input id="billingRecurringDiscount" class="platformInput" inputmode="decimal" placeholder="Discount %" value="0"/>
+                  <button id="btnAddBillingRecurringLine" class="miniIconBtn quoteLineAdd" type="button" title="Add recurring line" aria-label="Add recurring line">
+                    <i class="ph ph-plus"></i>
+                  </button>
+                </div>
+                <div id="billingRecurringLineList" class="quoteLineList"></div>
+                <div id="billingRecurringTotalPreview" class="billingTotalPreview">Subtotal R0.00 - VAT R0.00 - Monthly Total R0.00</div>
+                <button id="btnSaveBillingRecurring" class="platformBtn" type="submit">Save Recurring Invoice</button>
+              </form>
+            </div>
+            <div id="billingRecurringList" class="compactList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="billingTools">
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">Clients</div>
+            <div class="platformActions">
+              <span class="statusPill" id="billingClientCount">0</span>
+              <button id="btnToggleBillingClientForm" class="miniIconBtn" type="button" title="Add client" aria-label="Add client">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="billingClientFormBox" class="collapseBox" hidden>
+              <form class="platformForm" id="billingClientForm" style="margin-bottom:14px;">
+                <input id="billingClientName" class="platformInput" placeholder="Client name" autocomplete="off"/>
+                <input id="billingClientContact" class="platformInput" placeholder="Contact person" autocomplete="off"/>
+                <input id="billingClientEmail" class="platformInput" type="email" placeholder="Email" autocomplete="off"/>
+                <input id="billingClientPhone" class="platformInput" placeholder="Phone" autocomplete="off"/>
+                <input id="billingClientVat" class="platformInput" placeholder="VAT number" autocomplete="off"/>
+                <textarea id="billingClientAddress" class="platformInput platformTextarea" placeholder="Address"></textarea>
+                <select id="billingClientActive" class="platformSelect">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <button id="btnSaveBillingClient" class="platformBtn" type="submit">Save Client</button>
+              </form>
+            </div>
+            <div id="billingClientList" class="compactList"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panelHead">
+            <div class="panelTitle">Items</div>
+            <div class="platformActions">
+              <span class="statusPill" id="billingItemCount">0</span>
+              <button id="btnToggleBillingItemForm" class="miniIconBtn" type="button" title="Add item" aria-label="Add item">
+                <i class="ph ph-plus"></i>
+              </button>
+            </div>
+          </div>
+          <div class="panelBody">
+            <div id="billingItemFormBox" class="collapseBox" hidden>
+              <form class="platformForm" id="billingItemForm" style="margin-bottom:14px;">
+                <input id="billingItemCode" class="platformInput" placeholder="Item code e.g. ITM001" autocomplete="off"/>
+                <input id="billingItemName" class="platformInput" placeholder="Item name" autocomplete="off"/>
+                <textarea id="billingItemDescription" class="platformInput platformTextarea" placeholder="Description"></textarea>
+                <input id="billingItemUnit" class="platformInput" placeholder="Unit e.g. hour, item, day" autocomplete="off"/>
+                <input id="billingItemPrice" class="platformInput" inputmode="decimal" placeholder="Rate" autocomplete="off"/>
+                <select id="billingItemVatType" class="platformSelect">
+                  <option value="standard">Standard VAT</option>
+                  <option value="zero">Zero rated</option>
+                  <option value="exempt">Exempt</option>
+                </select>
+                <select id="billingItemActive" class="platformSelect">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+                <button id="btnSaveBillingItem" class="platformBtn" type="submit">Save Item</button>
+              </form>
+            </div>
+            <div id="billingItemList" class="compactList"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<div class="modal sheetModal" id="siteActionModal" aria-hidden="true">
+  <div class="modalCard modalSheet">
+    <button id="btnCloseSiteAction" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+    <div class="modalTitle">Site Actions</div>
+    <div class="modalSub" id="siteActionSub"></div>
+    <div class="billingActionList" id="siteActionList"></div>
+  </div>
+</div>
+
+<div class="modal sheetModal" id="billingActionModal" aria-hidden="true">
+  <div class="modalCard modalSheet">
+    <button id="btnCloseBillingAction" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+    <div class="modalTitle" id="billingActionTitle">Document Actions</div>
+    <div class="modalSub" id="billingActionSub"></div>
+    <div class="billingActionList" id="billingActionList"></div>
+  </div>
+</div>
+
+<div class="modal sheetModal" id="billingPaymentModal" aria-hidden="true">
+  <div class="modalCard modalSheet">
+    <button id="btnCloseBillingPayment" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+    <div class="modalTitle">Record Payment</div>
+    <div class="modalSub" id="billingPaymentInvoice">Invoice</div>
+    <form id="billingPaymentForm" class="platformForm payslipSheetForm">
+      <input id="billingPaymentAmount" class="platformInput" inputmode="decimal" placeholder="Amount"/>
+      <input id="billingPaymentDate" class="platformInput" type="date"/>
+      <select id="billingPaymentMethod" class="platformSelect">
+        <option value="bank_transfer">Bank Transfer</option><option value="cash">Cash</option><option value="card">Card</option><option value="other">Other</option>
+      </select>
+      <input id="billingPaymentReference" class="platformInput" placeholder="Reference"/>
+      <textarea id="billingPaymentNotes" class="platformInput platformTextarea" placeholder="Notes"></textarea>
+      <button class="platformBtn" type="submit">Save Payment</button>
+    </form>
+    <div id="billingPaymentHistory" class="billingPaymentHistory"></div>
+  </div>
+</div>
+
+<div class="modal sheetModal" id="billingInvoiceEditModal" aria-hidden="true">
+  <div class="modalCard modalSheet">
+    <button id="btnCloseBillingInvoiceEdit" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+    <div class="modalTitle">Edit Invoice</div>
+    <div class="modalSub" id="billingInvoiceEditLabel">Invoice</div>
+    <form id="billingInvoiceEditForm" class="platformForm payslipSheetForm">
+      <input id="billingInvoiceIssueDate" class="platformInput" type="date" aria-label="Invoice issue date"/>
+      <input id="billingInvoiceDueDate" class="platformInput" type="date" aria-label="Invoice due date"/>
+      <select id="billingInvoiceStatus" class="platformSelect">
+        <option value="draft">Draft</option><option value="sent">Sent</option><option value="cancelled">Cancelled</option>
+      </select>
+      <textarea id="billingInvoiceNotes" class="platformInput platformTextarea" placeholder="Notes"></textarea>
+      <button class="platformBtn" type="submit">Save Invoice</button>
+    </form>
+  </div>
+</div>
 
 <main class="platformShell" id="employeeShell" hidden>
   <div class="platformWrap">
@@ -1838,6 +3789,9 @@ select{
         </div>
       </div>
       <div class="platformActions">
+        <button id="btnEmployeePortfolio" class="miniIconBtn" type="button" title="Switch company" aria-label="Switch company" hidden>
+          <i class="ph ph-buildings"></i>
+        </button>
         <button id="btnEmployeeBack" class="miniIconBtn" type="button" title="Back" aria-label="Back" hidden>
           <i class="ph ph-arrow-left"></i>
         </button>
@@ -1946,6 +3900,9 @@ select{
         <button id="btnBackToCompanyDashboard" class="iconBtn" type="button" title="Company dashboard" aria-label="Company dashboard" hidden>
           <i class="ph ph-squares-four"></i>
         </button>
+        <button id="btnBackToPortfolio" class="iconBtn" type="button" title="Switch company" aria-label="Switch company" hidden>
+          <i class="ph ph-buildings"></i>
+        </button>
         <button id="btnOpenEmployeeDashboard" class="iconBtn" type="button" title="My dashboard" aria-label="My dashboard" hidden>
           <i class="ph ph-user"></i>
         </button>
@@ -1956,11 +3913,14 @@ select{
     </div>
 
     <div class="segWrap">
-      <div class="seg">
-        <button id="btnIn" class="active" type="button">Clock IN</button>
-        <button id="btnOut" type="button">Clock OUT</button>
+        <div class="seg">
+          <button id="btnIn" class="active" type="button">Clock IN</button>
+          <button id="btnTeamStatus" class="segStatusBtn" type="button" title="Team status" aria-label="Team status" hidden>
+            <i class="ph ph-broadcast"></i>
+          </button>
+          <button id="btnOut" type="button">Clock OUT</button>
+        </div>
       </div>
-    </div>
 
     <button class="siteBtn" id="btnSite" type="button">
       Site: <span id="siteName">—</span>
@@ -1989,12 +3949,23 @@ select{
 
   <div class="camCard">
     <div id="reader"></div>
-    <div class="scanBox"></div>
-    <div class="camFrame"></div>
-    <div class="camBadge">
-      <b>Scan QR</b>
-      <small>Hold steady • Auto-add to queue</small>
+    <div id="scannerModeSwitch" class="scannerModeSwitch" data-mode="qr" role="tablist" aria-label="Scanner mode">
+      <button id="btnScanFace" class="scannerModeBtn" type="button" role="tab" aria-selected="false">
+        <i class="ph ph-user-focus"></i>
+        <span>Face</span>
+      </button>
+      <button id="btnScanQr" class="scannerModeBtn active" type="button" role="tab" aria-selected="true">
+        <i class="ph ph-qr-code"></i>
+        <span>QR</span>
+      </button>
     </div>
+    <div id="scannerGuide" class="scannerGuide hidden" aria-hidden="true">
+      <i id="scannerGuideIcon" class="ph ph-qr-code"></i>
+      <b id="scannerGuideTitle">Hold QR inside frame</b>
+      <small id="scannerGuideSub">Auto-add to queue</small>
+    </div>
+    <div id="scanBox" class="scanBox"></div>
+    <div class="camFrame"></div>
   </div>
 
   <div class="queue">
@@ -2010,6 +3981,36 @@ select{
   <div class="stickyInner">
     <button id="btnSubmit" class="submitBtn" type="button" disabled>Submit Clock IN (0)</button>
     <div class="footHint">Location + online required • Inside site radius</div>
+  </div>
+</div>
+
+<!-- Team status modal -->
+<div class="modal" id="teamStatusModal" aria-hidden="true">
+  <div class="modalCard teamStatusCard">
+    <button id="btnCloseTeamStatus" class="modalCloseIcon" type="button" title="Close" aria-label="Close">
+      <i class="ph ph-x"></i>
+    </button>
+    <div class="modalTitle">Team Status</div>
+    <div class="modalSub" id="teamStatusSub">Current clock status for this company.</div>
+    <div class="teamStatusSummary">
+      <span><b id="teamStatusInCount">0</b> In</span>
+      <span><b id="teamStatusOutCount">0</b> Out</span>
+    </div>
+    <div class="teamStatusTableWrap">
+      <table class="dataTable teamStatusTable">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Emp ID</th>
+            <th>Name</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+        <tbody id="teamStatusBody">
+          <tr><td colspan="4" class="mutedText">Loading team status...</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -2035,7 +4036,7 @@ select{
 </main>
 
 <script src="./config.js"></script>
-<script defer src="./app.js"></script>
+  <script defer src="./app.js?v=190"></script>
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {

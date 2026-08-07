@@ -74,6 +74,9 @@ node_modules/
 # Supabase local state
 supabase/.temp/
 
+# Generated local review and deployment artifacts
+tmp/
+
 # Local editor and duplicate scratch files
 *.code-workspace
 public/* - Copy.*
