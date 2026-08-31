@@ -318,6 +318,99 @@ body{
   background:rgba(165,125,211,0.11);
   color:#ba91e6;
 }
+.billingInvoicePanel{position:relative;overflow:visible;z-index:2}
+.billingInvoiceHeaderActions{position:relative}
+.billingInvoiceDateFilter{
+  position:absolute;
+  top:calc(100% + 12px);
+  right:40px;
+  z-index:40;
+  width:min(360px,calc(100vw - 40px));
+  padding:14px;
+  border:1px solid rgba(212,175,55,0.30);
+  border-radius:10px;
+  background:linear-gradient(155deg,rgba(24,23,19,0.99),rgba(12,12,13,0.99));
+  box-shadow:0 20px 55px rgba(0,0,0,0.58),0 0 24px rgba(212,175,55,0.08);
+}
+.billingInvoiceDateFilter::before{
+  content:"";
+  position:absolute;
+  top:-6px;
+  right:16px;
+  width:10px;
+  height:10px;
+  border-left:1px solid rgba(212,175,55,0.30);
+  border-top:1px solid rgba(212,175,55,0.30);
+  background:#171612;
+  transform:rotate(45deg);
+}
+.billingInvoiceFilterHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.billingInvoiceFilterTitle{font-size:13px;font-weight:950}
+.billingInvoiceFilterSub{margin-top:3px;color:var(--muted);font-size:10px}
+.billingInvoiceFilterClose{
+  border:0;background:transparent;color:var(--muted);padding:2px;display:grid;place-items:center;cursor:pointer
+}
+.billingInvoiceDateModes{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:3px;
+  padding:3px;
+  border:1px solid rgba(212,175,55,0.14);
+  border-radius:8px;
+  background:rgba(255,255,255,0.025);
+}
+.billingInvoiceDateModeBtn{
+  min-height:34px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:850;
+  cursor:pointer;
+}
+.billingInvoiceDateModeBtn.active{
+  background:rgba(212,175,55,0.14);
+  color:#f7e7af;
+  box-shadow:inset 0 0 0 1px rgba(212,175,55,0.17);
+}
+.billingInvoiceDateFields{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:8px;
+}
+.billingInvoiceMonthPicker{display:grid;grid-template-columns:38px minmax(0,1fr) 38px;gap:7px;align-items:center}
+.billingInvoiceMonthNav{width:38px;height:38px}
+.billingInvoiceMonthInput{text-align:center;font-weight:850;color-scheme:dark}
+.billingInvoiceDateActions{display:flex;justify-content:space-between;gap:8px;padding-top:2px}
+.billingInvoiceDateActions .platformBtn{min-width:88px}
+.billingInvoicePeriodSummary{
+  display:inline-flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:12px;
+  padding:8px 10px;
+  border:1px solid rgba(212,175,55,0.18);
+  border-radius:8px;
+  background:rgba(212,175,55,0.07);
+  color:#f6e7b3;
+  font-size:11px;
+  font-weight:800;
+  max-width:100%;
+}
+.billingInvoicePeriodSummary[hidden]{display:none}
+.billingInvoicePeriodCopy{display:flex;align-items:center;gap:7px;min-width:0}
+.billingInvoicePeriodCopy span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.billingInvoicePeriodClear{
+  border:0;
+  background:transparent;
+  color:inherit;
+  display:grid;
+  place-items:center;
+  padding:2px;
+  cursor:pointer;
+}
 .inlineHead{
   display:flex;
   align-items:center;
@@ -1237,6 +1330,8 @@ body{
     flex:1 1 260px;
     min-height:260px;
     max-height:none;
+    align-content:start;
+    grid-auto-rows:max-content;
   }
 }
 .quoteLineBuilder{
@@ -1745,6 +1840,9 @@ body{
     grid-template-columns:1fr;
   }
   .billingMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .billingInvoiceDateFilter{right:0;width:min(330px,calc(100vw - 32px))}
+  .billingInvoiceDateFilter::before{right:51px}
+  .billingInvoicePeriodSummary{display:flex;width:100%;justify-content:space-between}
   .detailGrid{grid-template-columns:1fr;}
   .statGrid{grid-template-columns:repeat(2,minmax(0,1fr));}
   .platformActions{justify-content:flex-end; flex:0 0 auto;}
@@ -2732,7 +2830,7 @@ select{
       </div>
 
       <div class="platformStack">
-        <div class="panel">
+        <div class="panel billingInvoicePanel">
           <div class="panelHead">
             <div>
               <div class="panelTitle" id="platformDetailTitle">Select a company</div>
@@ -3507,11 +3605,40 @@ select{
               <div class="panelTitle">Invoices</div>
               <div class="mutedText">Create invoices directly or convert accepted quotes.</div>
             </div>
-            <div class="platformActions">
+            <div class="platformActions billingInvoiceHeaderActions">
               <span class="statusPill" id="billingInvoiceCount">0</span>
+              <button id="btnToggleBillingInvoiceDateFilter" class="miniIconBtn" type="button" title="Filter invoices by date" aria-label="Filter invoices by date" aria-pressed="false">
+                <i class="ph ph-calendar-dots"></i>
+              </button>
               <button id="btnToggleBillingInvoiceForm" class="miniIconBtn" type="button" title="Add invoice" aria-label="Add invoice">
                 <i class="ph ph-plus"></i>
               </button>
+              <div id="billingInvoiceDateFilterBox" class="collapseBox billingInvoiceDateFilter" hidden>
+                <form id="billingInvoiceDateFilterForm" class="platformForm">
+                  <div class="billingInvoiceFilterHead">
+                    <div><div class="billingInvoiceFilterTitle">Invoice period</div><div class="billingInvoiceFilterSub">Choose what appears in this invoice view.</div></div>
+                    <button id="btnCloseBillingInvoiceDateFilter" class="billingInvoiceFilterClose" type="button" title="Close date filter" aria-label="Close date filter"><i class="ph ph-x"></i></button>
+                  </div>
+                  <input id="billingInvoiceDateMode" type="hidden" value="month"/>
+                  <div class="billingInvoiceDateModes" role="group" aria-label="Invoice date filter type">
+                    <button id="btnBillingInvoiceDateModeMonth" class="billingInvoiceDateModeBtn active" type="button" data-invoice-date-mode="month" aria-pressed="true">Month</button>
+                    <button id="btnBillingInvoiceDateModeRange" class="billingInvoiceDateModeBtn" type="button" data-invoice-date-mode="range" aria-pressed="false">Custom range</button>
+                  </div>
+                  <div id="billingInvoiceMonthFields" class="billingInvoiceMonthPicker">
+                    <button id="btnBillingInvoicePreviousMonth" class="miniIconBtn billingInvoiceMonthNav" type="button" title="Previous month" aria-label="Previous month"><i class="ph ph-caret-left"></i></button>
+                    <input id="billingInvoiceMonth" class="platformInput billingInvoiceMonthInput" type="month" aria-label="Invoice month"/>
+                    <button id="btnBillingInvoiceNextMonth" class="miniIconBtn billingInvoiceMonthNav" type="button" title="Next month" aria-label="Next month"><i class="ph ph-caret-right"></i></button>
+                  </div>
+                  <div id="billingInvoiceRangeFields" class="billingInvoiceDateFields" hidden>
+                    <input id="billingInvoiceDateStart" class="platformInput" type="date" aria-label="Invoice date range start"/>
+                    <input id="billingInvoiceDateEnd" class="platformInput" type="date" aria-label="Invoice date range end"/>
+                  </div>
+                  <div class="billingInvoiceDateActions">
+                    <button id="btnResetBillingInvoiceDateFilter" class="platformBtn secondary inline" type="button">Clear</button>
+                    <button class="platformBtn inline" type="submit">Apply period</button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
           <div class="panelBody">
@@ -3544,6 +3671,10 @@ select{
                 <div id="billingManualInvoiceTotalPreview" class="billingTotalPreview">Subtotal R0.00 - VAT R0.00 - Total R0.00</div>
                 <button id="btnSaveBillingManualInvoice" class="platformBtn" type="submit">Save Invoice</button>
               </form>
+            </div>
+            <div id="billingInvoicePeriodSummary" class="billingInvoicePeriodSummary" hidden>
+              <div class="billingInvoicePeriodCopy"><i class="ph ph-calendar-dots"></i><span id="billingInvoicePeriodLabel"></span></div>
+              <button id="btnClearBillingInvoiceDateFilter" class="billingInvoicePeriodClear" type="button" title="Clear invoice date filter" aria-label="Clear invoice date filter"><i class="ph ph-x"></i></button>
             </div>
             <div class="billingMetrics">
               <div class="billingMetric"><b id="billingMetricRevenue">R0.00</b><span>Monthly Revenue</span></div>
@@ -4050,7 +4181,7 @@ select{
 </main>
 
 <script src="./config.js"></script>
-  <script defer src="./app.js?v=192"></script>
+  <script defer src="./app.js?v=195"></script>
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {

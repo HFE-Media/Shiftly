@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v203"; // bump this whenever you want a guaranteed refresh
+const CACHE_NAME = "shiftly-v206"; // bump this whenever you want a guaranteed refresh
 
 const ASSETS = [
   "/",

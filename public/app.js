@@ -160,6 +160,7 @@ let billingProfile = null;
 let editingBillingClientId = null;
 let editingBillingItemId = null;
 let showArchivedBillingItems = false;
+let billingInvoiceDateFilter = null;
 let editingBillingQuoteId = null;
 let editingBillingRecurringId = null;
 let currentBillingAction = null;
@@ -392,6 +393,24 @@ const el = {
   billingQuoteList: $("billingQuoteList"),
   billingInvoiceFormBox: $("billingInvoiceFormBox"),
   btnToggleBillingInvoiceForm: $("btnToggleBillingInvoiceForm"),
+  btnToggleBillingInvoiceDateFilter: $("btnToggleBillingInvoiceDateFilter"),
+  billingInvoiceDateFilterBox: $("billingInvoiceDateFilterBox"),
+  billingInvoiceDateFilterForm: $("billingInvoiceDateFilterForm"),
+  btnCloseBillingInvoiceDateFilter: $("btnCloseBillingInvoiceDateFilter"),
+  billingInvoiceDateMode: $("billingInvoiceDateMode"),
+  btnBillingInvoiceDateModeMonth: $("btnBillingInvoiceDateModeMonth"),
+  btnBillingInvoiceDateModeRange: $("btnBillingInvoiceDateModeRange"),
+  billingInvoiceMonthFields: $("billingInvoiceMonthFields"),
+  billingInvoiceMonth: $("billingInvoiceMonth"),
+  btnBillingInvoicePreviousMonth: $("btnBillingInvoicePreviousMonth"),
+  btnBillingInvoiceNextMonth: $("btnBillingInvoiceNextMonth"),
+  billingInvoiceRangeFields: $("billingInvoiceRangeFields"),
+  billingInvoiceDateStart: $("billingInvoiceDateStart"),
+  billingInvoiceDateEnd: $("billingInvoiceDateEnd"),
+  btnResetBillingInvoiceDateFilter: $("btnResetBillingInvoiceDateFilter"),
+  billingInvoicePeriodSummary: $("billingInvoicePeriodSummary"),
+  billingInvoicePeriodLabel: $("billingInvoicePeriodLabel"),
+  btnClearBillingInvoiceDateFilter: $("btnClearBillingInvoiceDateFilter"),
   billingInvoiceForm: $("billingInvoiceForm"),
   billingManualInvoiceNumber: $("billingManualInvoiceNumber"),
   billingManualInvoiceClient: $("billingManualInvoiceClient"),
@@ -5649,6 +5668,76 @@ async function syncAutomaticBillingStatuses() {
   }));
 }
 
+function billingPeriodDateLabel(value) {
+  if (!value) return "";
+  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
+}
+
+function billingInvoiceMonthRange(monthValue) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthValue || ""));
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    mode: "month",
+    start: `${match[1]}-${match[2]}-01`,
+    end: `${match[1]}-${match[2]}-${String(lastDay).padStart(2, "0")}`,
+    label: new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" })
+  };
+}
+
+function billingInvoiceMatchesDateFilter(invoice, filter = billingInvoiceDateFilter) {
+  if (!filter) return true;
+  const issueDate = String(invoice?.issue_date || "").slice(0, 10);
+  return Boolean(issueDate && issueDate >= filter.start && issueDate <= filter.end);
+}
+
+function billingPaymentMatchesPeriod(payment, filter) {
+  const paymentDate = String(payment?.payment_date || "").slice(0, 10);
+  return Boolean(paymentDate && paymentDate >= filter.start && paymentDate <= filter.end);
+}
+
+function setBillingInvoiceDateFilterOpen(show) {
+  el.billingInvoiceDateFilterBox.hidden = !show;
+  el.btnToggleBillingInvoiceDateFilter.setAttribute("aria-pressed", String(show));
+  el.btnToggleBillingInvoiceDateFilter.classList.toggle("active", show || Boolean(billingInvoiceDateFilter));
+}
+
+function syncBillingInvoiceDateFilterFields() {
+  const customRange = el.billingInvoiceDateMode.value === "range";
+  el.billingInvoiceMonthFields.hidden = customRange;
+  el.billingInvoiceRangeFields.hidden = !customRange;
+  el.btnBillingInvoiceDateModeMonth.classList.toggle("active", !customRange);
+  el.btnBillingInvoiceDateModeRange.classList.toggle("active", customRange);
+  el.btnBillingInvoiceDateModeMonth.setAttribute("aria-pressed", String(!customRange));
+  el.btnBillingInvoiceDateModeRange.setAttribute("aria-pressed", String(customRange));
+}
+
+function setBillingInvoiceDateMode(mode) {
+  el.billingInvoiceDateMode.value = mode === "range" ? "range" : "month";
+  syncBillingInvoiceDateFilterFields();
+}
+
+function shiftBillingInvoiceFilterMonth(offset) {
+  const current = billingInvoiceMonthRange(el.billingInvoiceMonth.value)
+    || billingInvoiceMonthRange(localDateInputValue(new Date()).slice(0, 7));
+  const date = new Date(`${current.start}T00:00:00`);
+  date.setMonth(date.getMonth() + offset);
+  el.billingInvoiceMonth.value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function clearBillingInvoiceDateFilter(closeEditor = true) {
+  billingInvoiceDateFilter = null;
+  if (closeEditor) setBillingInvoiceDateFilterOpen(false);
+  renderBillingData();
+}
+
 function renderBillingData(emptyMessage = "") {
   const activeBillingItems = billingItems.filter((item) => item.active !== false);
   const archivedBillingItems = billingItems.filter((item) => item.active === false);
@@ -5664,28 +5753,54 @@ function renderBillingData(emptyMessage = "") {
   el.btnToggleArchivedBillingItems.title = showArchivedBillingItems ? "View active items" : "View archived items";
   el.btnToggleArchivedBillingItems.setAttribute("aria-label", el.btnToggleArchivedBillingItems.title);
   el.billingQuoteCount.textContent = String(billingQuotes.length);
-  el.billingInvoiceCount.textContent = String(billingInvoices.length);
+  const visibleBillingInvoices = billingInvoices.filter((invoice) => billingInvoiceMatchesDateFilter(invoice));
+  el.billingInvoiceCount.textContent = String(visibleBillingInvoices.length);
+  el.billingInvoicePeriodSummary.hidden = !billingInvoiceDateFilter;
+  el.billingInvoicePeriodLabel.textContent = billingInvoiceDateFilter
+    ? `Showing invoices for ${billingInvoiceDateFilter.label}`
+    : "";
+  el.btnToggleBillingInvoiceDateFilter.classList.toggle(
+    "active",
+    !el.billingInvoiceDateFilterBox.hidden || Boolean(billingInvoiceDateFilter)
+  );
+  el.btnToggleBillingInvoiceDateFilter.setAttribute(
+    "aria-pressed",
+    String(!el.billingInvoiceDateFilterBox.hidden || Boolean(billingInvoiceDateFilter))
+  );
+  el.btnToggleBillingInvoiceDateFilter.title = billingInvoiceDateFilter
+    ? `Invoice period: ${billingInvoiceDateFilter.label}`
+    : "Filter invoices by date";
+  el.btnToggleBillingInvoiceDateFilter.setAttribute("aria-label", el.btnToggleBillingInvoiceDateFilter.title);
   el.billingRecurringCount.textContent = String(billingRecurringInvoices.length);
-  const invoiceSummary = billingInvoices.reduce((summary, invoice) => {
+  const invoiceSummary = visibleBillingInvoices.reduce((summary, invoice) => {
     const status = billingInvoiceDisplayStatus(invoice);
     if (status === "draft") summary.draft += 1;
     if (["sent", "partially_paid", "overdue"].includes(status)) summary.outstanding += 1;
     if (status === "paid") summary.paid += 1;
     if (!['paid','cancelled'].includes(status)) summary.outstandingValue += Number(invoice.balance_due ?? invoice.total ?? 0);
-    const paidThisMonth = (invoice.billing_payments || []).filter((payment) => String(payment.payment_date || "").slice(0,7) === localDateInputValue(new Date()).slice(0,7));
-    summary.revenue += paidThisMonth.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     return summary;
   }, { draft:0, outstanding:0, paid:0, revenue:0, outstandingValue:0 });
+  const currentMonthFilter = billingInvoiceMonthRange(localDateInputValue(new Date()).slice(0, 7));
+  const revenuePeriod = billingInvoiceDateFilter || currentMonthFilter;
+  invoiceSummary.revenue = billingInvoices.reduce((sum, invoice) => (
+    sum + (invoice.billing_payments || [])
+      .filter((payment) => billingPaymentMatchesPeriod(payment, revenuePeriod))
+      .reduce((paymentSum, payment) => paymentSum + Number(payment.amount || 0), 0)
+  ), 0);
   const today = localDateInputValue(new Date());
-  const recurringRevenue = billingRecurringInvoices
-    .filter((recurring) =>
-      recurring.active !== false
-      && (!recurring.end_date || recurring.end_date >= today)
-    )
-    .reduce((sum, recurring) => {
-      const totals = calculateBillingQuoteTotals(recurring.billing_recurring_invoice_items || []);
-      return sum + Number(totals.total || 0);
-    }, 0);
+  const recurringRevenue = billingInvoiceDateFilter
+    ? visibleBillingInvoices
+      .filter((invoice) => invoice.recurring_period && billingInvoiceDisplayStatus(invoice) !== "cancelled")
+      .reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
+    : billingRecurringInvoices
+      .filter((recurring) =>
+        recurring.active !== false
+        && (!recurring.end_date || recurring.end_date >= today)
+      )
+      .reduce((sum, recurring) => {
+        const totals = calculateBillingQuoteTotals(recurring.billing_recurring_invoice_items || []);
+        return sum + Number(totals.total || 0);
+      }, 0);
   el.billingMetricDraft.textContent = String(invoiceSummary.draft);
   el.billingMetricOutstanding.textContent = String(invoiceSummary.outstanding);
   el.billingMetricPaid.textContent = String(invoiceSummary.paid);
@@ -5715,7 +5830,7 @@ function renderBillingData(emptyMessage = "") {
       </div>
     `);
 
-    renderCompactList(el.billingInvoiceList, billingInvoices, "No invoices yet.", (invoice) => `
+    renderCompactList(el.billingInvoiceList, visibleBillingInvoices, billingInvoiceDateFilter ? `No invoices for ${billingInvoiceDateFilter.label}.` : "No invoices yet.", (invoice) => `
       <div class="compactItemTop">
         <div>
           <b>${escapeHtml(invoice.invoice_number || "Invoice")} - ${escapeHtml(invoice.client_name || "No client")}</b>
@@ -8732,6 +8847,55 @@ el.btnToggleBillingItemForm.addEventListener("click", () => {
 el.btnToggleArchivedBillingItems.addEventListener("click", () => {
   showArchivedBillingItems = !showArchivedBillingItems;
   renderBillingData();
+});
+el.btnToggleBillingInvoiceDateFilter.addEventListener("click", () => {
+  const opening = el.billingInvoiceDateFilterBox.hidden;
+  if (opening) {
+    const currentMonth = localDateInputValue(new Date()).slice(0, 7);
+    el.billingInvoiceDateMode.value = billingInvoiceDateFilter?.mode || "month";
+    el.billingInvoiceMonth.value = billingInvoiceDateFilter?.mode === "month"
+      ? billingInvoiceDateFilter.start.slice(0, 7)
+      : currentMonth;
+    el.billingInvoiceDateStart.value = billingInvoiceDateFilter?.start || `${currentMonth}-01`;
+    el.billingInvoiceDateEnd.value = billingInvoiceDateFilter?.end || localDateInputValue(new Date());
+    syncBillingInvoiceDateFilterFields();
+  }
+  setBillingInvoiceDateFilterOpen(opening);
+});
+el.btnCloseBillingInvoiceDateFilter.addEventListener("click", () => setBillingInvoiceDateFilterOpen(false));
+el.btnBillingInvoiceDateModeMonth.addEventListener("click", () => setBillingInvoiceDateMode("month"));
+el.btnBillingInvoiceDateModeRange.addEventListener("click", () => setBillingInvoiceDateMode("range"));
+el.btnBillingInvoicePreviousMonth.addEventListener("click", () => shiftBillingInvoiceFilterMonth(-1));
+el.btnBillingInvoiceNextMonth.addEventListener("click", () => shiftBillingInvoiceFilterMonth(1));
+el.billingInvoiceDateFilterForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (el.billingInvoiceDateMode.value === "month") {
+    const monthFilter = billingInvoiceMonthRange(el.billingInvoiceMonth.value);
+    if (!monthFilter) return alert("Select an invoice month.");
+    billingInvoiceDateFilter = monthFilter;
+  } else {
+    const start = el.billingInvoiceDateStart.value;
+    const end = el.billingInvoiceDateEnd.value;
+    if (!start || !end) return alert("Select both a start and end date.");
+    if (start > end) return alert("The start date must be before the end date.");
+    billingInvoiceDateFilter = {
+      mode: "range",
+      start,
+      end,
+      label: `${billingPeriodDateLabel(start)} to ${billingPeriodDateLabel(end)}`
+    };
+  }
+  setBillingInvoiceDateFilterOpen(false);
+  renderBillingData();
+});
+el.btnResetBillingInvoiceDateFilter.addEventListener("click", () => clearBillingInvoiceDateFilter());
+el.btnClearBillingInvoiceDateFilter.addEventListener("click", () => clearBillingInvoiceDateFilter());
+document.addEventListener("click", (event) => {
+  if (
+    !el.billingInvoiceDateFilterBox.hidden
+    && !el.billingInvoiceDateFilterBox.contains(event.target)
+    && !el.btnToggleBillingInvoiceDateFilter.contains(event.target)
+  ) setBillingInvoiceDateFilterOpen(false);
 });
 el.btnToggleBillingQuoteForm.addEventListener("click", () => {
   const opening = el.billingQuoteFormBox.hidden;
