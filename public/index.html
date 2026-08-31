@@ -313,6 +313,11 @@ body{
   background:rgba(212,175,55,0.14);
   color:#f6e7b3;
 }
+.miniIconBtn.archiveView.active{
+  border-color:rgba(165,125,211,0.46);
+  background:rgba(165,125,211,0.11);
+  color:#ba91e6;
+}
 .inlineHead{
   display:flex;
   align-items:center;
@@ -3297,16 +3302,22 @@ select{
 
   <div class="modal" id="eventTimeModal" aria-hidden="true">
     <div class="modalCard">
-      <div class="modalTitle">Edit Clock Time</div>
-      <div class="modalSub">Adjust the recorded date and time for this entry.</div>
+      <div class="modalTitle" id="eventTimeTitle">Edit Clock Time</div>
+      <div class="modalSub" id="eventTimeSub">Adjust the recorded date and time for this entry.</div>
       <div class="eventEditMeta">
         <div>Employee: <b id="eventTimeEmployee">-</b></div>
-        <div>Site: <b id="eventTimeSite">-</b></div>
+        <div>Current site: <b id="eventTimeSite">-</b></div>
         <div>Action: <b id="eventTimeAction">-</b></div>
+        <div>Result: <b id="eventTimeResult">-</b></div>
       </div>
       <form class="platformForm" id="eventTimeForm">
         <input id="eventTimeDate" class="platformInput" type="date"/>
         <input id="eventTimeTime" class="platformInput" type="time" step="1"/>
+        <select id="eventTimeSiteSelect" class="platformSelect" aria-label="Correct site" hidden></select>
+        <label id="eventTimeApproveRow" class="statutoryToggle" for="eventTimeApproveBlocked" hidden>
+          <input id="eventTimeApproveBlocked" type="checkbox"/>
+          <span>Approve this blocked entry for payroll</span>
+        </label>
         <button id="btnSaveEventTime" class="platformBtn" type="submit">Update Time</button>
       </form>
       <div class="modalActions">
@@ -3687,6 +3698,9 @@ select{
             <div class="panelTitle">Items</div>
             <div class="platformActions">
               <span class="statusPill" id="billingItemCount">0</span>
+              <button id="btnToggleArchivedBillingItems" class="miniIconBtn archiveView" type="button" title="View archived items" aria-label="View archived items" aria-pressed="false">
+                <i class="ph ph-archive"></i>
+              </button>
               <button id="btnToggleBillingItemForm" class="miniIconBtn" type="button" title="Add item" aria-label="Add item">
                 <i class="ph ph-plus"></i>
               </button>
@@ -3707,7 +3721,7 @@ select{
                 </select>
                 <select id="billingItemActive" class="platformSelect">
                   <option value="true">Active</option>
-                  <option value="false">Inactive</option>
+                  <option value="false">Archived</option>
                 </select>
                 <button id="btnSaveBillingItem" class="platformBtn" type="submit">Save Item</button>
               </form>
@@ -4036,7 +4050,7 @@ select{
 </main>
 
 <script src="./config.js"></script>
-  <script defer src="./app.js?v=190"></script>
+  <script defer src="./app.js?v=192"></script>
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {

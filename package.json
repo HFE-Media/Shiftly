@@ -1,0 +1,15 @@
+{
+  "name": "shiftly-static-app",
+  "private": true,
+  "scripts": {
+    "build:billing-pdf": "node scripts/build-billing-pdf.mjs",
+    "test:billing-pdf": "node --test tests/billing-pdf.test.cjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "jspdf": "4.2.1",
+    "jspdf-autotable": "5.0.8",
+    "linkedom": "0.18.13",
+    "pdfjs-dist": "6.2.108"
+  }
+}

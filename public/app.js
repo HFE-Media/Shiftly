@@ -55,8 +55,18 @@ const BILLING_MANUAL_ITEM_VALUE = "__manual__";
 const BILLING_MANUAL_CLIENT_VALUE = "__manual_client__";
 const BILLING_PROFILE_TABLE = "billing_company_profiles";
 const VAT_RATE = 0.15;
+const DEFAULT_BILLING_USER_ID = "a18ac0ca-f1e8-4ca3-add9-591d87aa9b15";
+const DEFAULT_BILLING_COMPANY_ID = "7721bc3a-272c-4e4d-97e9-d9d6107bf42a";
 const TR_ELECTRICAL_COMPANY_ID = "f50d8e62-3006-462e-b2a9-b1cf7c500394";
-const TR_ELECTRICAL_YTD_TAKEOVER_DATE = "2026-08-01";
+const PVS_COMPANY_IDS = new Set([
+  "276c7308-8944-41de-bf48-f32ddfec4933",
+  "58f6d52b-fc34-4976-8330-c661008942ce"
+]);
+const PAYROLL_YTD_TAKEOVER_DATES = Object.freeze({
+  [TR_ELECTRICAL_COMPANY_ID]: "2026-08-01",
+  "276c7308-8944-41de-bf48-f32ddfec4933": "2026-08-01",
+  "58f6d52b-fc34-4976-8330-c661008942ce": "2026-08-01"
+});
 const TR_ELECTRICAL_NBCEI_RATE_VERSION = "2026-06";
 const TR_ELECTRICAL_NBCEI_RATES = Object.freeze({
   "43": Object.freeze({ label: "Elconop 3", provident: 335.21, sbf: 13.41, council: 17.88, cbl: 20.77 }),
@@ -149,6 +159,7 @@ let billingRecurringLines = [];
 let billingProfile = null;
 let editingBillingClientId = null;
 let editingBillingItemId = null;
+let showArchivedBillingItems = false;
 let editingBillingQuoteId = null;
 let editingBillingRecurringId = null;
 let currentBillingAction = null;
@@ -356,6 +367,7 @@ const el = {
   billingItemActive: $("billingItemActive"),
   btnSaveBillingItem: $("btnSaveBillingItem"),
   billingItemList: $("billingItemList"),
+  btnToggleArchivedBillingItems: $("btnToggleArchivedBillingItems"),
   billingQuoteCount: $("billingQuoteCount"),
   billingQuoteFormBox: $("billingQuoteFormBox"),
   btnToggleBillingQuoteForm: $("btnToggleBillingQuoteForm"),
@@ -527,11 +539,17 @@ const el = {
   scanBox: $("scanBox"),
   eventTimeModal: $("eventTimeModal"),
   eventTimeForm: $("eventTimeForm"),
+  eventTimeTitle: $("eventTimeTitle"),
+  eventTimeSub: $("eventTimeSub"),
   eventTimeEmployee: $("eventTimeEmployee"),
   eventTimeSite: $("eventTimeSite"),
   eventTimeAction: $("eventTimeAction"),
+  eventTimeResult: $("eventTimeResult"),
   eventTimeDate: $("eventTimeDate"),
   eventTimeTime: $("eventTimeTime"),
+  eventTimeSiteSelect: $("eventTimeSiteSelect"),
+  eventTimeApproveRow: $("eventTimeApproveRow"),
+  eventTimeApproveBlocked: $("eventTimeApproveBlocked"),
   btnSaveEventTime: $("btnSaveEventTime"),
   btnCloseEventTime: $("btnCloseEventTime"),
   payrollBreakdownModal: $("payrollBreakdownModal"),
@@ -861,7 +879,7 @@ async function loadEmployeeDashboard() {
       fetchPayrollDeductions(company, start, end, employeeId),
       fetchPayrollAdjustments(company, start, end, employeeId),
       fetchPayrollLevyPeriod(company, start, end),
-      fetchTrElectricalYtdContext(company, start, employeeId)
+      fetchPayrollYtdContext(company, start, end, employeeId)
     ]);
     if (employeeError) throw employeeError;
     if (eventError) throw eventError;
@@ -873,7 +891,7 @@ async function loadEmployeeDashboard() {
       employeeAdjustments,
       companyPayrollRules
     );
-    validateTrElectricalYtdContinuity(adjustedRows, loadedYtdContext, start);
+    validatePayrollYtdContinuity(adjustedRows, loadedYtdContext, end);
     const payroll = attachDeductionsToPayrollRows(
       adjustedRows,
       trElectricalAutomaticLevyDeductions(adjustedRows, employeeDeductions, loadedLevyPeriod, company),
@@ -1087,6 +1105,16 @@ async function routeCurrentUser() {
   }
 
   await loadCompanyAccess();
+  const defaultBillingCompany = String(currentUser?.id || "") === DEFAULT_BILLING_USER_ID
+    ? companies.find((company) => company.id === DEFAULT_BILLING_COMPANY_ID)
+    : null;
+  if (defaultBillingCompany) {
+    setCurrentCompany(defaultBillingCompany);
+    if (canUseBilling()) {
+      await showBillingDashboard();
+      return;
+    }
+  }
   if (companies.length > 1) {
     await showPortfolioDashboard();
     return;
@@ -2048,6 +2076,11 @@ function isPublicHoliday(date) {
   return SA_PUBLIC_HOLIDAYS_2026.has(dateKey(date));
 }
 
+function shouldApplyPublicHolidayTopup(date) {
+  const companyId = String(currentCompany()?.id || "");
+  return !(PVS_COMPANY_IDS.has(companyId) && date.getDay() === 0);
+}
+
 function datesInRange(startValue, endValue) {
   const dates = [];
   if (!startValue || !endValue) return dates;
@@ -2501,6 +2534,7 @@ function buildPayrollBreakdown(employee, employeeEvents, rulesInput = activePayr
   if (!isMonthly && rules.public_holiday_rule === "ot2_with_topup") {
     for (const holiday of datesInRange(el.payrollStartDate.value, el.payrollEndDate.value)) {
       if (!isPublicHoliday(holiday)) continue;
+      if (!shouldApplyPublicHolidayTopup(holiday)) continue;
       const worked = publicHolidayWorked.get(dateKey(holiday)) || 0;
       const topup = Math.max(0, rules.public_holiday_standard_hours - worked);
       breakdown.holidayTopupHours += topup;
@@ -3264,13 +3298,11 @@ function openPayslipModal() {
     ))
   ].join("");
   if (el.payslipModalSub) {
-    el.payslipModalSub.textContent = isTrElectricalCompany(company)
-      && String(el.payrollStartDate?.value || "") >= TR_ELECTRICAL_YTD_TAKEOVER_DATE
+    el.payslipModalSub.textContent = usesPayrollYtd(company, el.payrollEndDate?.value)
       ? "Generating saves this period's totals so PAYE carries forward correctly."
       : "Choose an employee from the current payroll run.";
   }
-  el.btnGeneratePayslip.textContent = isTrElectricalCompany(company)
-    && String(el.payrollStartDate?.value || "") >= TR_ELECTRICAL_YTD_TAKEOVER_DATE
+  el.btnGeneratePayslip.textContent = usesPayrollYtd(company, el.payrollEndDate?.value)
     ? "Finalise & Generate Payslip"
     : "Generate Payslip";
   el.payslipModal.classList.add("show");
@@ -3350,7 +3382,7 @@ function calculateAnnualTax2027(annualIncome) {
   return Math.max(0, taxBeforeRebate - SA_PAYE_2027.primaryRebate);
 }
 
-function calculateTrElectricalCumulativePaye(gross, providentContribution, periodCount, ytdContext) {
+function calculateCumulativePaye(gross, providentContribution, periodCount, ytdContext) {
   const completedPeriods = Number(ytdContext?.completedPeriods || 0)
     + Number(ytdContext?.finalizedPeriods || 0);
   const periodsElapsed = Math.min(periodCount, Math.max(1, completedPeriods + 1));
@@ -3405,8 +3437,8 @@ function statutoryDeductionRows(row, rulesInput = activePayrollRules(), existing
     const providentContribution = isTrElectricalCompany()
       ? Math.max(0, deductionAmountForField(existingDeductions, { label: "Provident" }))
       : 0;
-    const ytdPaye = isTrElectricalCompany() && ytdContext?.enabled
-      ? calculateTrElectricalCumulativePaye(gross, providentContribution, periodCount, ytdContext)
+    const ytdPaye = ytdContext?.enabled
+      ? calculateCumulativePaye(gross, providentContribution, periodCount, ytdContext)
       : null;
     const amount = ytdPaye
       ? ytdPaye.amount
@@ -3468,7 +3500,7 @@ function attachDeductionsToPayrollRows(rows, deductions, rulesInput = activePayr
   }
   return (rows || []).map((row) => {
     const existingDeductions = byEmployee.get(String(row.employee_id || "")) || [];
-    const employeeYtdContext = trElectricalEmployeeYtdContext(ytdContext, row.employee_id);
+    const employeeYtdContext = payrollEmployeeYtdContext(ytdContext, row.employee_id);
     const rowDeductions = [
       ...existingDeductions,
       ...statutoryDeductionRows(row, rules, existingDeductions, employeeYtdContext)
@@ -3640,12 +3672,21 @@ function payrollTaxYearStart(value) {
   return `${month >= 3 ? year : year - 1}-03-01`;
 }
 
-async function fetchTrElectricalYtdContext(company, periodStart, employeeId = "") {
-  const enabled = isTrElectricalCompany(company)
-    && String(periodStart || "") >= TR_ELECTRICAL_YTD_TAKEOVER_DATE;
-  const taxYearStart = payrollTaxYearStart(periodStart);
+function payrollYtdTakeoverDate(company = currentCompany()) {
+  return PAYROLL_YTD_TAKEOVER_DATES[String(company?.id || "")] || "";
+}
+
+function usesPayrollYtd(company, periodEnd) {
+  const takeoverDate = payrollYtdTakeoverDate(company);
+  return Boolean(takeoverDate && String(periodEnd || "") >= takeoverDate);
+}
+
+async function fetchPayrollYtdContext(company, periodStart, periodEnd, employeeId = "") {
+  const takeoverDate = payrollYtdTakeoverDate(company);
+  const enabled = usesPayrollYtd(company, periodEnd);
+  const taxYearStart = payrollTaxYearStart(periodEnd);
   if (!enabled || !taxYearStart) {
-    return { enabled: false, taxYearStart, byEmployee: new Map() };
+    return { enabled: false, taxYearStart, takeoverDate, byEmployee: new Map() };
   }
 
   let openingQuery = sb
@@ -3673,7 +3714,7 @@ async function fetchTrElectricalYtdContext(company, periodStart, employeeId = ""
 
   const byEmployee = new Map();
   for (const opening of openingRows || []) {
-    if (String(opening.as_of_date || "") >= String(periodStart || "")) continue;
+    if (String(opening.as_of_date || "") >= String(periodEnd || "")) continue;
     byEmployee.set(String(opening.employee_id || ""), {
       enabled: true,
       hasOpening: true,
@@ -3708,10 +3749,16 @@ async function fetchTrElectricalYtdContext(company, periodStart, employeeId = ""
     byEmployee.set(key, context);
   }
 
-  return { enabled: true, taxYearStart, byEmployee };
+  return {
+    enabled: true,
+    taxYearStart,
+    takeoverDate,
+    companyName: company.name || "Company",
+    byEmployee
+  };
 }
 
-function trElectricalEmployeeYtdContext(ytdContext, employeeId) {
+function payrollEmployeeYtdContext(ytdContext, employeeId) {
   if (!ytdContext?.enabled) return null;
   return ytdContext.byEmployee.get(String(employeeId || "")) || {
     enabled: true,
@@ -3733,20 +3780,21 @@ function expectedMonthlyPeriodsBefore(periodStart, taxYearStart) {
   return Math.max(0, (period.getFullYear() - taxStart.getFullYear()) * 12 + period.getMonth() - taxStart.getMonth());
 }
 
-function validateTrElectricalYtdContinuity(rows, ytdContext, periodStart) {
+function validatePayrollYtdContinuity(rows, ytdContext, periodEnd) {
   if (!ytdContext?.enabled) return;
   const problems = [];
   const isTakeoverTaxYear = ytdContext.taxYearStart === "2026-03-01";
   for (const row of rows || []) {
-    const context = trElectricalEmployeeYtdContext(ytdContext, row.employee_id);
+    if (moneyNumber(row.rate) <= 0 && moneyNumber(row.gross) <= 0) continue;
+    const context = payrollEmployeeYtdContext(ytdContext, row.employee_id);
     const employedBeforeTakeover = !row.employment_date
-      || String(row.employment_date) < TR_ELECTRICAL_YTD_TAKEOVER_DATE;
+      || String(row.employment_date) < ytdContext.takeoverDate;
     if (isTakeoverTaxYear && employedBeforeTakeover && !context.hasOpening) {
       problems.push(`${row.employee_id} - ${row.employee_name || "Employee"}: July YTD opening balance missing`);
       continue;
     }
     if (String(row.pay_cycle || "").toLowerCase() !== "monthly" || !context.hasOpening) continue;
-    const expectedCompleted = expectedMonthlyPeriodsBefore(periodStart, ytdContext.taxYearStart);
+    const expectedCompleted = expectedMonthlyPeriodsBefore(periodEnd, ytdContext.taxYearStart);
     const actualCompleted = context.completedPeriods + context.finalizedPeriods;
     if (actualCompleted !== expectedCompleted) {
       problems.push(
@@ -3757,7 +3805,7 @@ function validateTrElectricalYtdContinuity(rows, ytdContext, periodStart) {
   }
   if (problems.length) {
     throw new Error(
-      `TR Electrical YTD history is incomplete:\n\n${problems.slice(0, 8).join("\n")}`
+      `${ytdContext.companyName || "Company"} YTD history is incomplete:\n\n${problems.slice(0, 8).join("\n")}`
       + `${problems.length > 8 ? `\n+ ${problems.length - 8} more` : ""}`
       + "\n\nFinalize the missing earlier payroll period before continuing."
     );
@@ -3839,10 +3887,9 @@ function payslipDeductionLine(description, amount = 0) {
   </tr>`;
 }
 
-async function saveTrElectricalPayrollPeriodTotals(company, rows, start, end) {
+async function savePayrollPeriodTotals(company, rows, start, end) {
   if (
-    !isTrElectricalCompany(company)
-    || String(start || "") < TR_ELECTRICAL_YTD_TAKEOVER_DATE
+    !usesPayrollYtd(company, end)
     || !rows?.length
   ) {
     return;
@@ -3894,7 +3941,7 @@ async function generateSelectedPayslip() {
   const originalLabel = el.btnGeneratePayslip.textContent;
   el.btnGeneratePayslip.textContent = "Preparing...";
   try {
-    await saveTrElectricalPayrollPeriodTotals(
+    await savePayrollPeriodTotals(
       company,
       rows,
       el.payrollStartDate.value,
@@ -4218,7 +4265,7 @@ async function runPayrollReport(silent = false) {
           ? savePayrollLevyPeriod(company, start, end, requestedLevyWeeks)
           : fetchPayrollLevyPeriod(company, start, end))
         : Promise.resolve(null),
-      fetchTrElectricalYtdContext(company, start)
+      fetchPayrollYtdContext(company, start, end)
     ]);
     if (error) throw error;
     companyDeductionTypes = loadedDeductionTypes;
@@ -4232,7 +4279,7 @@ async function runPayrollReport(silent = false) {
       payrollAdjustments,
       activePayrollRules()
     );
-    validateTrElectricalYtdContinuity(adjustedRows, loadedYtdContext, start);
+    validatePayrollYtdContinuity(adjustedRows, loadedYtdContext, end);
     const deductionsWithLevies = trElectricalAutomaticLevyDeductions(
       adjustedRows,
       payrollDeductions,
@@ -5139,6 +5186,7 @@ function billingInvoiceStatusClass(invoice) {
   if (status === "overdue") return "billingStatusOverdue";
   if (status === "sent") return "billingStatusSent";
   if (status === "paid") return "billingStatusPaid";
+  if (status === "cancelled") return "billingStatusExpired";
   return "";
 }
 
@@ -5602,12 +5650,19 @@ async function syncAutomaticBillingStatuses() {
 }
 
 function renderBillingData(emptyMessage = "") {
+  const activeBillingItems = billingItems.filter((item) => item.active !== false);
+  const archivedBillingItems = billingItems.filter((item) => item.active === false);
+  const visibleBillingItems = showArchivedBillingItems ? archivedBillingItems : activeBillingItems;
   el.billingStatClients.textContent = String(billingClients.length);
-  el.billingStatItems.textContent = String(billingItems.length);
+  el.billingStatItems.textContent = String(activeBillingItems.length);
   el.billingStatQuotes.textContent = String(billingQuotes.length);
   el.billingStatInvoices.textContent = String(billingInvoices.length);
   el.billingClientCount.textContent = String(billingClients.length);
-  el.billingItemCount.textContent = String(billingItems.length);
+  el.billingItemCount.textContent = String(visibleBillingItems.length);
+  el.btnToggleArchivedBillingItems.classList.toggle("active", showArchivedBillingItems);
+  el.btnToggleArchivedBillingItems.setAttribute("aria-pressed", String(showArchivedBillingItems));
+  el.btnToggleArchivedBillingItems.title = showArchivedBillingItems ? "View active items" : "View archived items";
+  el.btnToggleArchivedBillingItems.setAttribute("aria-label", el.btnToggleArchivedBillingItems.title);
   el.billingQuoteCount.textContent = String(billingQuotes.length);
   el.billingInvoiceCount.textContent = String(billingInvoices.length);
   el.billingRecurringCount.textContent = String(billingRecurringInvoices.length);
@@ -5689,7 +5744,7 @@ function renderBillingData(emptyMessage = "") {
             <span>Last run: ${escapeHtml(runText)}</span>
           </div>
           <div class="billingDocActions">
-            <span class="statusPill">${recurring.active === false ? "Paused" : "Active"}</span>
+            <span class="statusPill ${recurring.active === false ? "billingStatusExpired" : "billingStatusAccepted"}">${recurring.active === false ? "Paused" : "Active"}</span>
             <button class="miniIconBtn" type="button" data-billing-menu="recurring" data-billing-id="${escapeHtml(recurring.id || "")}" title="Recurring invoice actions" aria-label="Recurring invoice actions"><i class="ph ph-dots-three"></i></button>
           </div>
         </div>
@@ -5712,16 +5767,16 @@ function renderBillingData(emptyMessage = "") {
     </div>
   `);
 
-  renderCompactList(el.billingItemList, billingItems, "No items yet.", (item) => `
+  renderCompactList(el.billingItemList, visibleBillingItems, showArchivedBillingItems ? "No archived items." : "No active items yet.", (item) => `
     <div class="compactItemTop">
       <div>
         <b>${escapeHtml(item.item_code || "")} - ${escapeHtml(item.name || "")}</b>
         <span>${escapeHtml(item.description || "No description")}</span>
         <span>${escapeHtml(formatBillingMoney(item.price))} / ${escapeHtml(item.unit || "item")} • ${escapeHtml(formatBillingVatType(item.vat_type))}</span>
-        <span>${escapeHtml(item.active ? "Active" : "Inactive")}</span>
+        <span>${escapeHtml(item.active !== false ? "Active" : "Archived")}</span>
       </div>
       <div class="billingDocActions">
-        <span class="statusPill">${item.active ? "Active" : "Inactive"}</span>
+        <span class="statusPill ${item.active === false ? "billingStatusExpired" : "billingStatusPaid"}">${item.active !== false ? "Active" : "Archived"}</span>
         <button class="miniIconBtn" type="button" data-billing-menu="item" data-billing-id="${escapeHtml(item.id || "")}" title="Item actions" aria-label="Item actions"><i class="ph ph-dots-three"></i></button>
       </div>
     </div>
@@ -6323,8 +6378,8 @@ function openBillingActionModal(type, id) {
     el.billingActionList.innerHTML = [
       billingActionButton("edit", "Edit", "ph-pencil-simple"),
       record.active === false
-        ? billingActionButton("activate", "Activate", "ph-play-circle")
-        : billingActionButton("deactivate", "Deactivate", "ph-pause-circle"),
+        ? billingActionButton("activate", isClient ? "Activate" : "Restore Item", isClient ? "ph-play-circle" : "ph-arrow-counter-clockwise")
+        : billingActionButton("deactivate", isClient ? "Deactivate" : "Archive Item", isClient ? "ph-pause-circle" : "ph-archive"),
       billingActionButton("delete", isClient ? "Delete Client" : "Delete Item", "ph-trash", "danger")
     ].join("");
   } else {
@@ -6336,6 +6391,7 @@ function openBillingActionModal(type, id) {
       billingActionButton("edit", "Edit", "ph-pencil-simple"),
       billingActionButton("duplicate", "Duplicate", "ph-copy"),
       billingActionButton("pdf", "Download PDF", "ph-file-pdf"),
+      billingActionButton("print", "Print / Preview", "ph-printer"),
       record.status !== "sent" ? billingActionButton("mark_sent", "Mark Sent", "ph-paper-plane-tilt") : "",
       record.status !== "accepted" ? billingActionButton("mark_accepted", "Mark Accepted", "ph-check-circle") : "",
       record.status !== "declined" ? billingActionButton("mark_declined", "Mark Declined", "ph-x-circle") : "",
@@ -6357,6 +6413,7 @@ function openBillingActionModal(type, id) {
     el.billingActionList.innerHTML = [
       billingActionButton("edit", "Edit Invoice", "ph-pencil-simple"),
       billingActionButton("pdf", "Download PDF", "ph-file-pdf"),
+      billingActionButton("print", "Print / Preview", "ph-printer"),
       status === "draft" ? billingActionButton("mark_sent", "Mark Sent", "ph-paper-plane-tilt") : "",
       !["paid", "cancelled"].includes(status) ? billingActionButton("payment", "Record Payment", "ph-money") : "",
       status !== "cancelled" ? billingActionButton("cancel", "Cancel Invoice", "ph-prohibit", "danger") : "",
@@ -6584,6 +6641,25 @@ function formatBillingDocumentDate(value) {
   return `${match[3]} ${month || ""} ${match[1]}`.trim();
 }
 
+function billingDocumentPdfTitle(document, { client, number, type = "invoice" }) {
+  const clean = (value) => String(value || "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+  const clientName = clean(document.client_name) || clean(client?.name) || "Client";
+  // Both invoice and quote dates are stored as issue_date; never use today's date.
+  const date = String(document.issue_date || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const parsedDate = date ? new Date(`${date[1]}-${date[2]}-${date[3]}T00:00:00Z`) : null;
+  const validDate = parsedDate && Number.isFinite(parsedDate.getTime())
+    && parsedDate.toISOString().slice(0, 10) === date[0].slice(0, 10);
+  const monthYear = validDate ? `${months[Number(date[2]) - 1]} ${date[1]}` : "";
+  const documentNumber = clean(number) || (type === "quote" ? "Quote" : "Invoice");
+  // Shared filename stem: the direct downloader (or browser print) adds .pdf.
+  return `${[clientName, monthYear].filter(Boolean).join(" ")} - ${documentNumber}`;
+}
+
 function billingInvoicePdfRows(document) {
   const rows = document.billing_invoice_items || document.billing_quote_items || [];
   return rows
@@ -6632,7 +6708,7 @@ function buildBillingInvoiceDocument(document, context) {
   const companyContact = [profile.phone, profile.email, website].filter(Boolean).map(escapeHtml).join("<br>");
   const clientContact = [document.client_contact || client.contact_person, document.client_email || client.email].filter(Boolean).map(escapeHtml).join("<br>");
 
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(number || (isQuote ? "Quote" : "Invoice"))}</title><style>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(billingDocumentPdfTitle(document, context))}</title><style>
 @page{size:A4;margin:12mm 12mm 18mm}*{box-sizing:border-box}body{margin:0;background:#d9d9d9;color:#181818;font:11px Arial,sans-serif}.tools{position:fixed;right:12px;top:10px;z-index:3}.tools button{padding:10px 14px;font-weight:800;background:#fff;border:1px solid #111;border-radius:5px;cursor:pointer}.invoicePage{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:14mm 15mm 18mm;display:flex;flex-direction:column}.invoiceHeader{display:grid;grid-template-columns:42mm 1fr;gap:12mm;align-items:start;border-bottom:2px solid #181818;padding-bottom:8mm}.invoiceLogo{height:29mm;display:flex;align-items:center;justify-content:flex-start}.invoiceLogo img{max-width:38mm;max-height:27mm;object-fit:contain}.logoFallback{font-weight:900;font-size:16px}.invoiceHeading{text-align:right}.invoiceHeading h1{margin:0 0 5mm;font-size:27px;letter-spacing:.05em;color:#b88913}.metaGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3mm 5mm}.metaItem{min-width:0}.label{display:block;margin-bottom:2px;font-size:8px;line-height:1.2;text-transform:uppercase;letter-spacing:.12em;color:#716b62;font-weight:900}.metaItem strong{display:block;overflow-wrap:anywhere}.partyGrid{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin:8mm 0 5mm}.partyCard{min-height:37mm;border:1px solid #d8d0c2;border-radius:8px;padding:4mm;line-height:1.55}.partyCard h2{margin:1mm 0 2mm;font-size:14px}.partyContent{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.partyContent>div:last-child{text-align:right}.dateStrip{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-bottom:7mm;padding:0 1mm}.dateStrip>div:last-child{text-align:right}.invoiceItems{width:100%;border-collapse:collapse;table-layout:fixed}.invoiceItems col.description{width:31%}.invoiceItems col.qty{width:9%}.invoiceItems col.price{width:14%}.invoiceItems col.percent{width:9%}.invoiceItems col.money{width:14%}.invoiceItems thead{display:table-header-group}.invoiceItems th{padding:8px 6px;background:#f7f4ee;border-top:1px solid #d8d0c2;border-bottom:1px solid #d8d0c2;color:#625c53;font-size:8px;text-transform:uppercase;letter-spacing:.06em;text-align:right;white-space:normal}.invoiceItems th:first-child{text-align:left;border-radius:7px 0 0 0}.invoiceItems th:last-child{border-radius:0 7px 0 0}.invoiceItems td{padding:8px 6px;border-bottom:1px solid #e7e1d7;text-align:right;vertical-align:top;break-inside:avoid;page-break-inside:avoid}.invoiceItems td:first-child{text-align:left}.descriptionCell{overflow-wrap:anywhere}.itemCode{display:block;margin-bottom:2px;font-size:8px;font-weight:900;color:#716b62}.invoiceBottom{margin-top:auto;padding-top:7mm;break-inside:avoid;page-break-inside:avoid}.settlementGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.88fr);gap:8mm;align-items:start;break-inside:avoid;page-break-inside:avoid}.quoteSettlement .totalsBlock{grid-column:2}.bankingBlock{padding-top:0}.bankingBlock h2,.notesBlock h2{margin:0 0 3mm;font-size:12px;text-transform:uppercase;letter-spacing:.08em}.bankingRows{display:grid;grid-template-columns:34mm minmax(0,1fr);gap:1.6mm 4mm;line-height:1.35}.bankingRows b{color:#625c53}.bankingRows span{min-width:0;overflow-wrap:anywhere}.totalsBlock{border:1px solid #d8d0c2;border-radius:8px;overflow:hidden}.totalRow{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;border-bottom:1px solid #e7e1d7}.totalRow span:first-child{color:#625c53}.totalRow.grand{font-weight:900;border-top:1px solid #b88913}.totalRow.balance,.totalRow.quoteTotal{background:#181818;color:#fff;border:0;font-size:13px;font-weight:900}.totalRow.balance span:first-child,.totalRow.quoteTotal span:first-child{color:#fff}.notesBlock{margin-top:7mm;padding-top:3mm;border-top:1px solid #d8d0c2;line-height:1.55;white-space:normal;overflow-wrap:anywhere;break-inside:avoid;page-break-inside:avoid}.documentFooter{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6mm;margin-top:7mm;padding-top:3mm;border-top:1px solid #d8d0c2;color:#716b62;font-size:8px;break-inside:avoid;page-break-inside:avoid}.footerCompany{text-align:left}.footerEmail{text-align:center}.footerPage{text-align:right}
     @media screen and (max-width:820px){.invoicePage{transform:scale(.58);transform-origin:top left;margin-left:calc((100vw - 121.8mm)/2);margin-bottom:-124mm}.tools{left:10px;right:10px;text-align:right}}
 @media print{body{background:#fff}.tools{display:none}.invoicePage{width:100%;min-height:267mm;padding:0;margin:0;transform:none;transform-origin:initial}.invoiceItems thead{display:table-header-group}.invoiceItems tr{break-inside:avoid;page-break-inside:avoid}.invoiceBottom,.settlementGrid,.notesBlock,.documentFooter{break-inside:avoid;page-break-inside:avoid}}
@@ -6669,6 +6745,59 @@ function openBillingPdf(type, id) {
   if (!win) return alert("Allow popups for this site so Shiftly can open the PDF preview.");
   win.document.open(); win.document.write(buildBillingDocument(type, document)); win.document.close();
   closeBillingActionModal();
+}
+
+let billingPdfEnginePromise = null;
+let billingPdfDownloadBusy = false;
+
+function loadBillingPdfEngine() {
+  if (window.ShiftlyBillingPdf) return Promise.resolve(window.ShiftlyBillingPdf);
+  if (billingPdfEnginePromise) return billingPdfEnginePromise;
+  billingPdfEnginePromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    const fail = () => {
+      clearTimeout(timer);
+      script.remove();
+      billingPdfEnginePromise = null;
+      reject(new Error("PDF tools could not be loaded. Check your connection and retry, or use Print / Preview."));
+    };
+    const timer = setTimeout(fail, 30000);
+    script.src = "./vendor/billing-pdf.js?v=1";
+    script.async = true;
+    script.onerror = fail;
+    script.onload = () => {
+      if (!window.ShiftlyBillingPdf) return fail();
+      clearTimeout(timer);
+      resolve(window.ShiftlyBillingPdf);
+    };
+    document.head.appendChild(script);
+  });
+  return billingPdfEnginePromise;
+}
+
+async function downloadBillingPdf(type, id) {
+  if (billingPdfDownloadBusy) return;
+  const record = (type === "quote" ? billingQuotes : billingInvoices)
+    .find((row) => String(row.id) === String(id));
+  if (!record) return;
+  // Snapshot the selected company/document before asynchronous loading.
+  const html = buildBillingDocument(type, record);
+  const button = el.billingActionList.querySelector('[data-billing-action="pdf"]');
+  const originalLabel = button?.innerHTML;
+  billingPdfDownloadBusy = true;
+  if (button) { button.disabled = true; button.textContent = "Preparing PDF..."; }
+  try {
+    const engine = await loadBillingPdfEngine();
+    await engine.download(html);
+    if (currentBillingAction?.type === type && String(currentBillingAction?.id) === String(id)) {
+      closeBillingActionModal();
+    }
+  } catch (error) {
+    alert(`Failed to download PDF: ${error.message || error}`);
+  } finally {
+    billingPdfDownloadBusy = false;
+    if (button) { button.disabled = false; button.innerHTML = originalLabel; }
+  }
 }
 
 async function setBillingRecurringActive(id, active) {
@@ -6757,7 +6886,7 @@ async function deleteBillingMasterRecord(type, id) {
   }
   if (references.length) {
     const summary = references.map((row) => `${row.count} ${row.label}`).join(", ");
-    return alert(`This ${label} is linked to ${summary} and cannot be permanently deleted. Deactivate it instead to preserve billing history.`);
+    return alert(`This ${label} is linked to ${summary} and cannot be permanently deleted. ${isClient ? "Deactivate the client" : "Archive the item"} instead to preserve billing history.`);
   }
 
   const recordName = isClient ? record.name : `${record.item_code || ""} - ${record.name || ""}`.replace(/^\s*-\s*/, "");
@@ -6767,7 +6896,7 @@ async function deleteBillingMasterRecord(type, id) {
     .eq(COMPANY_ID_COL, company.id)
     .eq("id", id);
   if (error) {
-    const linkedMessage = error.code === "23503" ? ` This ${label} is linked to billing history; deactivate it instead.` : "";
+    const linkedMessage = error.code === "23503" ? ` This ${label} is linked to billing history; ${isClient ? "deactivate it" : "archive it"} instead.` : "";
     return alert(`Failed to delete ${label}: ${error.message || error}${linkedMessage}`);
   }
   await loadBillingData();
@@ -6776,7 +6905,8 @@ async function deleteBillingMasterRecord(type, id) {
 async function handleBillingAction(action) {
   if (!currentBillingAction) return;
   const { type, id } = currentBillingAction;
-  if (action === "pdf") return openBillingPdf(type, id);
+  if (action === "pdf") return downloadBillingPdf(type, id);
+  if (action === "print") return openBillingPdf(type, id);
   if (type === "client" || type === "item") {
     const isClient = type === "client";
     if (action === "edit") {
@@ -6866,7 +6996,8 @@ async function toggleCompanyRecordActive(type, id, active) {
   }[type];
   if (!config || !id) return;
 
-  const action = active ? "activate" : "deactivate";
+  const isBillingItem = type === "billingItem";
+  const action = isBillingItem ? (active ? "restore" : "archive") : (active ? "activate" : "deactivate");
   if (!confirm(`Are you sure you want to ${action} this ${config.label}?`)) return;
 
   const { error } = await sb
@@ -7504,8 +7635,27 @@ function openEventTimeEditor(entryId) {
   el.eventTimeEmployee.textContent = `${event.employee_id || ""} ${event.employee_name ? "- " + event.employee_name : ""}`.trim();
   el.eventTimeSite.textContent = `${event.site_id || ""} ${event.site_name ? "- " + event.site_name : ""}`.trim();
   el.eventTimeAction.textContent = event.action || "-";
+  el.eventTimeResult.textContent = event.result || "-";
   el.eventTimeDate.value = toDateInputValue(date);
   el.eventTimeTime.value = toTimeInputValue(date);
+  const trCorrection = isTrElectricalCompany();
+  const blocked = String(event.result || "").toUpperCase() === "BLOCKED";
+  el.eventTimeTitle.textContent = trCorrection ? "Correct Clock Entry" : "Edit Clock Time";
+  el.eventTimeSub.textContent = trCorrection
+    ? "Correct the time or site. Blocked entries require explicit approval before payroll can use them."
+    : "Adjust the recorded date and time for this entry.";
+  el.eventTimeSiteSelect.hidden = !trCorrection;
+  el.eventTimeApproveRow.hidden = !trCorrection || !blocked;
+  el.eventTimeApproveBlocked.checked = false;
+  if (trCorrection) {
+    el.eventTimeSiteSelect.innerHTML = companyAdminSites.map((site) => `
+      <option value="${escapeHtml(site.site_id || "")}">${escapeHtml(site.site_id || "")} - ${escapeHtml(site.name || "")}${site.active === false ? " (Inactive)" : ""}</option>
+    `).join("");
+    el.eventTimeSiteSelect.value = String(event.site_id || "");
+  } else {
+    el.eventTimeSiteSelect.innerHTML = "";
+  }
+  el.btnSaveEventTime.textContent = trCorrection ? "Update Entry" : "Update Time";
   el.eventTimeModal.classList.add("show");
   el.eventTimeModal.setAttribute("aria-hidden", "false");
 }
@@ -7529,21 +7679,36 @@ async function saveEventTime(event) {
   const nextDate = new Date(`${dateValue}T${timeValue}`);
   if (!Number.isFinite(nextDate.getTime())) return alert("Choose a valid date and time.");
 
+  const trCorrection = isTrElectricalCompany(company);
+  const selectedSiteId = trCorrection ? String(el.eventTimeSiteSelect.value || "") : String(editingEvent.site_id || "");
+  const approveBlocked = trCorrection && el.eventTimeApproveBlocked.checked;
+  if (trCorrection && !selectedSiteId) return alert("Choose the correct site.");
+  if (trCorrection && String(editingEvent.result || "").toUpperCase() === "BLOCKED" && !approveBlocked) {
+    return alert("Tick the approval box to approve this blocked entry, or cancel without changing it.");
+  }
+
   el.btnSaveEventTime.disabled = true;
   el.btnSaveEventTime.textContent = "Updating...";
   try {
-    const { error } = await sb
-      .from("clock_events")
-      .update({ created_at: nextDate.toISOString() })
-      .eq(COMPANY_ID_COL, company.id)
-      .eq("entry_id", editingEvent.entry_id);
+    const { error } = trCorrection
+      ? await sb.rpc("correct_tr_electrical_clock_event", {
+          p_entry_id: editingEvent.entry_id,
+          p_created_at: nextDate.toISOString(),
+          p_site_id: selectedSiteId,
+          p_approve_blocked: approveBlocked
+        })
+      : await sb
+          .from("clock_events")
+          .update({ created_at: nextDate.toISOString() })
+          .eq(COMPANY_ID_COL, company.id)
+          .eq("entry_id", editingEvent.entry_id);
 
-    if (error) return alert("Failed to update time: " + error.message);
+    if (error) return alert(`Failed to update ${trCorrection ? "entry" : "time"}: ${error.message}`);
     closeEventTimeEditor();
     await loadCompanyAdminDetail();
   } finally {
     el.btnSaveEventTime.disabled = false;
-    el.btnSaveEventTime.textContent = "Update Time";
+    el.btnSaveEventTime.textContent = trCorrection ? "Update Entry" : "Update Time";
   }
 }
 
@@ -8563,6 +8728,10 @@ el.btnToggleBillingItemForm.addEventListener("click", () => {
     el.btnSaveBillingItem.textContent = "Save Item";
   }
   showBillingItemForm(opening);
+});
+el.btnToggleArchivedBillingItems.addEventListener("click", () => {
+  showArchivedBillingItems = !showArchivedBillingItems;
+  renderBillingData();
 });
 el.btnToggleBillingQuoteForm.addEventListener("click", () => {
   const opening = el.billingQuoteFormBox.hidden;
