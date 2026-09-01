@@ -16,7 +16,11 @@ const types = {
 
 http.createServer((req, res) => {
   const url = new URL(req.url, `http://${host}:${port}`);
-  const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
+  const requested = url.pathname === "/"
+    ? "index.html"
+    : (url.pathname === "/login" || url.pathname === "/login/")
+      ? "login.html"
+      : url.pathname.slice(1);
   const filePath = path.normalize(path.join(root, requested));
 
   if (!filePath.startsWith(root)) {

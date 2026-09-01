@@ -1,8 +1,10 @@
-const CACHE_NAME = "shiftly-v206"; // bump this whenever you want a guaranteed refresh
+const CACHE_NAME = "shiftly-v207"; // route-separated marketing and operational shells
 
 const ASSETS = [
   "/",
   "/index.html",
+  "/login",
+  "/login.html",
   "/config.js",
   "/app.js",
   "/manifest.json",
@@ -36,8 +38,8 @@ self.addEventListener("fetch", (event) => {
   // Only handle same-origin GET requests
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
 
-  // NETWORK-FIRST for HTML (prevents “stuck old UI” on mobile)
-  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/app.js" || url.pathname === "/config.js") {
+  // NETWORK-FIRST for both HTML entry points and operational code.
+  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/login" || url.pathname === "/login/" || url.pathname === "/login.html" || url.pathname === "/app.js" || url.pathname === "/config.js") {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: "no-store" });
@@ -46,7 +48,11 @@ self.addEventListener("fetch", (event) => {
         return fresh;
       } catch (e) {
         const cached = await caches.match(req);
-        return cached || caches.match("/index.html");
+        if (cached) return cached;
+        const operationalRoute = url.pathname === "/login" || url.pathname === "/login/" || url.pathname === "/login.html";
+        return operationalRoute
+          ? (await caches.match("/login")) || caches.match("/login.html")
+          : caches.match("/index.html");
       }
     })());
     return;
