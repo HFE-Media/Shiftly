@@ -16,6 +16,14 @@
       "dest": "/public/login.html"
     },
     {
+      "src": "/billing",
+      "dest": "/public/billing.html"
+    },
+    {
+      "src": "/billing/",
+      "dest": "/public/billing.html"
+    },
+    {
       "src": "/(.*)",
       "dest": "/public/$1"
     }

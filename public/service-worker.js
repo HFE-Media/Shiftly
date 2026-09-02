@@ -1,8 +1,15 @@
-const CACHE_NAME = "shiftly-v207"; // route-separated marketing and operational shells
+const CACHE_NAME = "shiftly-v216"; // Billing polish assets + route-separated public and operational shells
 
 const ASSETS = [
   "/",
   "/index.html",
+  "/marketing.css?v=225",
+  "/marketing.js?v=224",
+  "/assets/marketing/shiftly-logo.jpg?v=214",
+  "/billing",
+  "/billing/",
+  "/billing.html",
+  "/billing.css?v=2",
   "/login",
   "/login.html",
   "/config.js",
@@ -39,7 +46,7 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
 
   // NETWORK-FIRST for both HTML entry points and operational code.
-  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/login" || url.pathname === "/login/" || url.pathname === "/login.html" || url.pathname === "/app.js" || url.pathname === "/config.js") {
+  if (url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/billing" || url.pathname === "/billing/" || url.pathname === "/billing.html" || url.pathname === "/login" || url.pathname === "/login/" || url.pathname === "/login.html" || url.pathname === "/app.js" || url.pathname === "/config.js") {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: "no-store" });
@@ -50,9 +57,10 @@ self.addEventListener("fetch", (event) => {
         const cached = await caches.match(req);
         if (cached) return cached;
         const operationalRoute = url.pathname === "/login" || url.pathname === "/login/" || url.pathname === "/login.html";
-        return operationalRoute
-          ? (await caches.match("/login")) || caches.match("/login.html")
-          : caches.match("/index.html");
+        const billingRoute = url.pathname === "/billing" || url.pathname === "/billing/" || url.pathname === "/billing.html";
+        if (operationalRoute) return (await caches.match("/login")) || caches.match("/login.html");
+        if (billingRoute) return (await caches.match("/billing")) || caches.match("/billing.html");
+        return caches.match("/index.html");
       }
     })());
     return;

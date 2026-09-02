@@ -11,16 +11,28 @@ const types = {
   ".json": "application/json; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
   ".ico": "image/x-icon",
 };
 
 http.createServer((req, res) => {
   const url = new URL(req.url, `http://${host}:${port}`);
-  const requested = url.pathname === "/"
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    res.writeHead(400);
+    res.end("Bad request");
+    return;
+  }
+  const requested = pathname === "/"
     ? "index.html"
-    : (url.pathname === "/login" || url.pathname === "/login/")
+    : (pathname === "/login" || pathname === "/login/")
       ? "login.html"
-      : url.pathname.slice(1);
+      : (pathname === "/billing" || pathname === "/billing/")
+        ? "billing.html"
+      : pathname.slice(1);
   const filePath = path.normalize(path.join(root, requested));
 
   if (!filePath.startsWith(root)) {
