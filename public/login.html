@@ -14,6 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="./icons/shiftly-favicon-32.png?v=148"/>
 <link rel="icon" type="image/png" sizes="192x192" href="./icons/shiftly-favicon-192.png?v=148"/>
 <link rel="manifest" href="./manifest.json"/>
+  <link rel="stylesheet" href="./jobs.css?v=11"/>
 
 <!-- Libraries -->
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -2982,6 +2983,9 @@ select{
         <button id="btnOpenClocking" class="miniIconBtn" type="button" title="Open clocking" aria-label="Open clocking">
           <i class="ph ph-fingerprint"></i>
         </button>
+        <button id="btnOpenJobsAdmin" class="miniIconBtn" type="button" title="Open Jobs" aria-label="Open Jobs" hidden>
+          <i class="ph ph-briefcase"></i>
+        </button>
         <button id="btnCompanyAdminLogout" class="iconBtn" type="button" title="Sign out" aria-label="Sign out">
           <i class="ph ph-sign-out"></i>
         </button>
@@ -4048,6 +4052,9 @@ select{
         <div class="supTop">
           <input id="supCode" class="supInput" maxlength="6" placeholder="CODE" autocomplete="off"/>
         </div>
+        <button id="btnOpenJobsSupervisor" class="iconBtn" type="button" title="Open Jobs" aria-label="Open Jobs" hidden>
+          <i class="ph ph-briefcase"></i>
+        </button>
         <button id="btnBackToCompanyDashboard" class="iconBtn" type="button" title="Company dashboard" aria-label="Company dashboard" hidden>
           <i class="ph ph-squares-four"></i>
         </button>
@@ -4188,6 +4195,8 @@ select{
 
 <script src="./config.js"></script>
   <script defer src="./app.js?v=195"></script>
+  <script defer src="./jobs-data.js?v=1"></script>
+  <script defer src="./jobs.js?v=11"></script>
 <script>
   if (window.location.protocol !== "file:" && "serviceWorker" in navigator) {
     window.addEventListener("load", () => {

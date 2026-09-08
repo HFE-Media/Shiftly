@@ -734,6 +734,7 @@ function showSignedOut() {
   currentCompanyName = "";
   currentCompanyRole = "";
   currentCompanyEmployeeId = "";
+  window.dispatchEvent(new Event("shiftly:company-context"));
   selectedSiteId = "";
   sites = [];
   queue.clear();
@@ -1304,6 +1305,7 @@ async function loadCompanyAccess() {
   currentCompanyName = companies.find(c => c.id === currentCompanyId)?.name || "";
   currentCompanyRole = companies.find(c => c.id === currentCompanyId)?.role || "";
   currentCompanyEmployeeId = companies.find(c => c.id === currentCompanyId)?.employee_id || "";
+  window.dispatchEvent(new Event("shiftly:company-context"));
   populateCompanySelect();
 }
 
@@ -1346,6 +1348,7 @@ function setCurrentCompany(company) {
   currentCompanyName = company.name || "";
   currentCompanyRole = company.role || "";
   currentCompanyEmployeeId = company.employee_id || "";
+  window.dispatchEvent(new Event("shiftly:company-context"));
   selectedSiteId = "";
   queue.clear();
   renderQueue();
