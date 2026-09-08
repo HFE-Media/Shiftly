@@ -5,6 +5,7 @@
   const DEMO_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
   const isLocalDevelopment = window.location.protocol === "file:" || DEMO_HOSTS.has(window.location.hostname);
   const isQaSession = isLocalDevelopment && new URLSearchParams(window.location.search).get("jobsQa") === "1";
+  const isMockMode = isLocalDevelopment && ['admin','supervisor','employee'].includes(new URLSearchParams(window.location.search).get('jobsDemo'));
   const supervisorIdentity = { employeeId: "E100", name: "Thabo Mokoena", role: "Lead Supervisor" };
   const teamDirectory = [
     supervisorIdentity,
@@ -231,11 +232,54 @@
   function photo(id, category, note, at) { return { id, category, note, at, by: supervisorIdentity.name }; }
   function uid(prefix) { return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
 
-  const dataService = isLocalDevelopment ? window.ShiftlyJobsData.createMock({
+  const dataService = isMockMode ? window.ShiftlyJobsData.createMock({
     location: window.location, fixtures: initialState, storage: isQaSession ? null : window.localStorage,
     key: STORAGE_KEY, qa: isQaSession, identity: supervisorIdentity, team: teamDirectory
   }) : null;
-  let state = dataService?.getState() || { jobs: [], sequence: 0 };
+  let state = mockState();
+  const liveDrafts = new Map();
+  let directoryCache = null;
+  // Real mode receives only the explicitly enabled workflow capabilities.
+  let jobsViewState = null;
+  let liveAdapter = null;
+  let liveDetail = null;
+  let liveRequest = 0;
+  let livePage = {offset:0,limit:25,hasMore:false};
+  let liveStatus = 'idle';
+  let liveMessage = '';
+  let planningPending=false;
+  let liveWorkerActive=false;
+  function canExecute(job=liveDetail) {
+    return !isMockMode && window.ShiftlyJobsData.canOpen(liveContext()) && liveContext().role==='supervisor' && liveWorkerActive && liveAdapter?.capabilities.execution===true && job?.detailLoaded===true && job.team.some(e=>e.employeeId===liveContext().employeeId);
+  }
+  function canOperate(){return canPlan()||canExecute();}
+  function isLead(job){return canExecute(job)&&job.lead?.employeeId===liveContext().employeeId;}
+  function reviewAllowed(method,job=liveDetail) {
+    if(!job||!liveAdapter?.capabilities.review||['completed','cancelled'].includes(job.status))return false;
+    if(['submit','resubmit'].includes(method))return isLead(job)&&['in_progress','correction_required'].includes(job.status)&&!openSessions(job).length&&job.workDays.some(d=>d.work?.trim())&&(method!=='resubmit'||!!job.correctedAt);
+    if(!canPlan())return false;
+    if(method==='returnCorrection')return job.status==='submitted_for_review';
+    if(method==='approve')return job.status==='submitted_for_review'&&!openSessions(job).length&&!!job.lead;
+    return method==='cancel'&&!openSessions(job).length;
+  }
+  let planningRefreshRequired=false;
+  let modalPlanning=false;
+  let planningJobId='';
+  let directoryRequest=0;
+  function canPlan() { return !isMockMode && window.ShiftlyJobsData.canOpen(liveContext()) && ['owner','admin'].includes(liveContext().role) && liveAdapter?.capabilities.planning===true; }
+  function liveContext() {
+    const c=currentJobsContext();
+    return {userId:c.userId,companyId:c.companyId,role:c.role,employeeId:c.employeeId,
+      jobsEnabled:c.jobsEnabled,version:c.version,membershipActive:c.membershipActive,linkedEmployeeActive:c.linkedEmployeeActive};
+  }
+  function mockState() { return isMockMode && dataService ? dataService.getState() : { jobs: [], sequence: 0 }; }
+  function jobsEmployeeId() { return isMockMode ? supervisorIdentity.employeeId : currentJobsContext().employeeId || ''; }
+  function getDirectories() {
+    if (!isMockMode) return directoryCache;
+    return { sites:[{siteId:'WORKSHOP',name:'Workshop'},{siteId:'ADMIN',name:'Administration Block'},{siteId:'LINE3',name:'Production Line 3'}],
+      team:teamDirectory, leads:teamDirectory.filter(p=>/supervisor/i.test(p.role)) };
+  }
+  function mediaAvailable() { return isMockMode; }
   let pendingAction = false;
   let contextKey = "";
   let contextGeneration = 0;
@@ -267,20 +311,18 @@
 
   function currentJobsContext() {
     try {
-      const company = typeof currentCompany === "function" ? currentCompany() : null;
-      return { userId: typeof currentUser !== "undefined" ? currentUser?.id : "",
-        companyId: company?.id || "", role: getAppRole(), employeeId: company?.employee_id || "",
-        jobsEnabled: company?.jobs_enabled === true };
+      return window.ShiftlyJobsContext?.get() || {};
     } catch { return {}; }
   }
 
   function setLocalContext(nextRole) {
-    if (!dataService) return;
+    if (!isMockMode || !dataService) return;
     dataService.setContext({ userId: "demo-" + nextRole, companyId: "demo",
       role: nextRole, jobsEnabled: true, employeeId: nextRole === "supervisor" ? supervisorIdentity.employeeId : "" });
   }
 
   async function performAction(action) {
+    if (!isMockMode) { toast('Jobs backend connection is not active.'); return; }
     if (pendingAction) return;
     pendingAction = true;
     const generation = contextGeneration;
@@ -310,13 +352,17 @@
     const next = JSON.stringify(context);
     if (next === contextKey) return;
     contextKey = next; contextGeneration++;
-    // Explicit demo data remains local and is never relabelled as another tenant.
-    if (demoRoleFromUrl()) return;
+    jobsViewState?.clear(); liveDrafts.clear(); directoryCache = null;
+    liveRequest++; liveAdapter?.clear(); liveAdapter=null; liveDetail=null;
+    directoryRequest++;planningPending=false;planningRefreshRequired=false;modalPlanning=false;planningJobId='';
+    liveWorkerActive=false;
+    livePage={offset:0,limit:25,hasMore:false};liveStatus='idle';liveMessage='';
     closeJob(); closeAllJobs(false);
     if (shell) shell.hidden = true;
     if (modal) closeModal();
     selectedJobId = ""; adminSearch = ""; adminFilter = "all";
-    state = { jobs: [], sequence: 0 };
+    state = { jobs: [], sequence: 0 }; pendingAction = false;
+    if (!isMockMode && root) root.innerHTML='';
   }
 
   function h(value) {
@@ -346,9 +392,9 @@
   function totalMinutes(job) { return job.sessions.reduce((sum, item) => sum + minutesBetween(item.startedAt, item.endedAt), 0); }
   function duration(minutes) { const hrs = Math.floor(minutes / 60); const mins = minutes % 60; return `${hrs}h ${String(mins).padStart(2, "0")}m`; }
   function openSessions(job) { return job.sessions.filter((item) => !item.endedAt); }
-  function currentSession(job) { return openSessions(job).find((item) => item.employeeId === supervisorIdentity.employeeId); }
-  function isAssigned(job) { return job.team.some((person) => person.employeeId === supervisorIdentity.employeeId); }
-  function selectedJob() { return state.jobs.find((job) => job.id === selectedJobId); }
+  function currentSession(job) { return openSessions(job).find((item) => item.employeeId === jobsEmployeeId()); }
+  function isAssigned(job) { return job.team.some((person) => person.employeeId === jobsEmployeeId()); }
+  function selectedJob() { return isMockMode ? state.jobs.find((job) => job.id === selectedJobId) : liveDetail; }
 
   const statusMap = {
     draft: ["Draft", "draft"], scheduled: ["Scheduled", "scheduled"], in_progress: ["Paused / Continue", "scheduled"],
@@ -357,7 +403,8 @@
   };
 
   function displayStatus(job) {
-    if (openSessions(job).length) return ["Working Now", "working"];
+    if (job.detailLoaded === false && job.status === 'in_progress') return ['In progress', 'scheduled'];
+    if (job.detailLoaded !== false && openSessions(job).length) return ["Working Now", "working"];
     return statusMap[job.status] || [job.status, ""];
   }
 
@@ -383,7 +430,7 @@
     modal.setAttribute("aria-hidden", "true");
     document.body.appendChild(modal);
 
-    if (isLocalDevelopment) {
+    if (isMockMode) {
       document.body.classList.add("jobsLocalDemo");
       devBar = document.createElement("div");
       devBar.className = "jobsDevBar";
@@ -396,7 +443,7 @@
   }
 
   function topbar() {
-    const subtitle = role === "admin" ? "Create, assign, track and complete field work." : "Assigned field work";
+    const subtitle = !isMockMode ? "Job records and work sessions" : role === "admin" ? "Create, assign, track and complete field work." : "Assigned field work";
     return `<header class="platformTop jobsNativeTop">
       <div class="platformBrand"><div class="brandBadge"><i class="ph ph-briefcase"></i></div><div><div class="platformTitle">Shiftly Jobs</div><div class="platformSub">${subtitle}</div></div></div>
       <div class="platformActions">
@@ -408,10 +455,66 @@
 
   function render() {
     ensureDom();
+    if (!isMockMode) { renderLiveList(); return; }
     if (screen === "detail" && selectedJob()) renderDetail();
     else if (role === "supervisor") renderSupervisorDashboard();
     else renderAdminDashboard();
     renderDevBar();
+  }
+
+  function renderLiveList() {
+    const loading=liveStatus==='loading-list'||liveStatus==='loading-detail';
+    const error=liveStatus==='error';
+    const content=loading ? '<p role="status">'+(liveStatus==='loading-detail'?'Loading Job detail…':'Loading Jobs…')+'</p>' :
+      error ? `<div role="alert">${h(liveMessage)} <button class="platformBtn inline jobsBtn secondary" data-action="live-retry">Retry list</button></div>` :
+      state.jobs.length ? `<div class="jobsCompactList">${state.jobs.map(job=>`<article class="jobsCompactRow"><button type="button" data-action="open" data-id="${h(job.id)}"><div class="jobsCompactMain"><strong>${h(job.jobNumber)} · ${h(job.title)}</strong><span>${h(job.clientName)} · ${h(job.site || job.serviceAddress)}</span><small>Scheduled ${localDate(job.scheduledDate)}</small></div><div class="jobsCompactAction">${statusBadge(job)}<span>Open Job</span></div></button></article>`).join('')}</div>` : '<p role="status">No Jobs to show.</p>';
+    root.innerHTML=`<div class="jobsApp">${topbar()}<section class="jobsDetailPanel"><div class="jobsPanelHead"><div><h2>Jobs</h2><p>${canPlan()?'Planning and session recovery enabled; review follows Job state.':'Work sessions require assigned active Supervisor access; review follows Job state.'}</p></div><button class="platformBtn inline jobsBtn primary" type="button" data-action="plan-create" ${canPlan()&&!planningPending&&!planningRefreshRequired?'':'disabled'}>Create Job</button></div>${liveStatus==='unavailable'?`<p role="status">${h(liveMessage)}</p>`:''}${content}<div class="jobsActionButtons"><button class="platformBtn inline jobsBtn secondary" data-action="live-retry" ${loading||planningPending?'disabled':''}>Refresh list</button><button class="platformBtn inline jobsBtn secondary" data-action="live-prev" ${loading||!livePage.offset?'disabled':''}>Previous</button><span>Page ${Math.floor(livePage.offset/livePage.limit)+1}</span><button class="platformBtn inline jobsBtn secondary" data-action="live-next" ${loading||!livePage.hasMore?'disabled':''}>Next</button></div></section></div>`;
+  }
+
+  function liveReadValid(request,key) {
+    return request===liveRequest && key===JSON.stringify(liveContext()) && window.ShiftlyJobsData.canOpen(liveContext()) && !shell.hidden;
+  }
+
+  async function liveReadFailure(error) {
+    liveDetail=null;selectedJobId='';
+    const failure=window.ShiftlyJobsData.errorState(error);
+    if(failure.category==='ACCESS_DENIED') {
+      state={jobs:[],sequence:0};
+      await closeJobs();syncEntrypoints();return;
+    }
+    if(error.code==='PGRST116') {
+      liveStatus='unavailable';liveMessage='This Job is no longer available.';
+    } else { liveStatus='error';liveMessage=failure.message;state={jobs:[],sequence:0}; }
+    renderLiveList();
+  }
+
+  async function loadLiveList(offset=livePage.offset) {
+    if(isMockMode || !liveAdapter || !window.ShiftlyJobsData.canOpen(liveContext())) return;
+    closeJob();liveDetail=null;selectedJobId='';
+    const request=++liveRequest,key=JSON.stringify(liveContext());
+    livePage={offset:Math.max(0,offset),limit:25,hasMore:false};
+    liveStatus='loading-list';state={jobs:[],sequence:0};renderLiveList();
+    try {
+      const rows=await liveAdapter.list(livePage);
+      if(!liveReadValid(request,key))return;
+      state={jobs:rows,sequence:0};livePage.hasMore=rows.length===livePage.limit;
+      if(!planningPending)planningRefreshRequired=false;
+      liveStatus=rows.length?'ready':'empty';renderLiveList();
+    }catch(error){if(liveReadValid(request,key))await liveReadFailure(error);}
+  }
+
+  async function loadLiveDetail(id) {
+    if(isMockMode || !liveAdapter || !window.ShiftlyJobsData.canOpen(liveContext())) return;
+    closeJob();liveDetail=null;selectedJobId='';
+    const request=++liveRequest,key=JSON.stringify(liveContext());
+    liveStatus='loading-detail';renderLiveList();
+    try {
+      const detail=await liveAdapter.detail(id);
+      const workerActive=liveContext().role==='supervisor'?await liveAdapter.workEligibility():false;
+      if(!liveReadValid(request,key))return;
+      liveWorkerActive=workerActive;
+      liveStatus='ready';renderLiveList();liveDetail=detail;openJob(id,true);
+    }catch(error){if(liveReadValid(request,key))await liveReadFailure(error);}
   }
 
   function adminSummary() {
@@ -540,7 +643,7 @@
   function renderDetail() {
     const job = selectedJob();
     if (!job) return render();
-    const readOnly = job.status === "completed" || role === "supervisor" && job.status === "submitted_for_review";
+    const readOnly = !isMockMode || job.status === "completed" || role === "supervisor" && job.status === "submitted_for_review";
     const visibleTabs = role === "admin" ? adminTabs : job.status === "completed" ? [...supervisorTabs, ["card", "Job Card"]] : supervisorTabs;
     if (!visibleTabs.some(([id]) => id === activeTab)) activeTab = "overview";
     const previousScroll = workspace?.querySelector(".jobsWorkspaceBody")?.scrollTop || 0;
@@ -555,8 +658,8 @@
     workspace.innerHTML = `<div class="jobsWorkspaceCard" role="dialog" aria-modal="true" aria-labelledby="jobsWorkspaceTitle" tabindex="-1">
       <header class="jobsWorkspaceHead"><div class="jobsWorkspaceIdentity"><h2 id="jobsWorkspaceTitle">${h(job.jobNumber)} · ${h(job.title)}</h2><div class="mutedText">${h(job.clientName)} · ${h(job.site || job.serviceAddress)}</div><div class="jobsWorkspaceContext">${statusBadge(job)}<span>Lead <b>${h(job.lead?.name || "Unassigned")}</b></span><span>Team <b>${job.team.length}</b></span><span>Total time <b>${duration(totalMinutes(job))}</b></span></div></div><button class="jobsIconBtn" type="button" data-action="dashboard" aria-label="Close Job"><i class="ph ph-x"></i></button></header>
       <nav class="jobsTabs" role="tablist" aria-label="Job details">${visibleTabs.map(([id, label]) => `<button class="jobsTab ${activeTab === id ? "active" : ""}" type="button" role="tab" aria-selected="${activeTab === id}" data-action="tab" data-tab="${id}">${label}</button>`).join("")}</nav>
-      <div class="jobsWorkspaceBody"><div class="jobsWorkspaceContent">
-      ${role === "supervisor" && !(activeTab === "today" && currentSession(job)) ? workflowBar(job) : ""}
+      <div class="jobsWorkspaceBody"><div class="jobsWorkspaceContent">${reviewBar(job)}
+      ${(canPlan() || role === "supervisor") && (!isMockMode || !(activeTab === "today" && currentSession(job))) ? workflowBar(job) : ""}
       <section id="jobsTabPanel" role="tabpanel">${renderTab(job, activeTab, readOnly)}</section></div></div></div>`;
     workspace.querySelector(".jobsWorkspaceBody").scrollTop = previousScroll;
     if (focusedTab) workspace.querySelector('.jobsTab.active')?.focus({ preventScroll: true });
@@ -567,6 +670,13 @@
   function fact(label, value) { return `<div class="jobsFact"><span>${label}</span><b>${h(value)}</b></div>`; }
 
   function workflowBar(job) {
+    if(!isMockMode) {
+      const own=currentSession(job);
+      if(canExecute(job))return `<div class="jobsActionBar"><div class="jobsActionCopy"><b>${own?'Active session':job.status==='in_progress'?'Paused — no own open session':'Job work'}</b><span>Job work time is separate from attendance.</span></div><div class="jobsActionButtons">${own&&job.status==='in_progress'?'<button class="platformBtn inline jobsBtn primary" data-action="execute-finish">Finish Work for Today</button>':!own&&['scheduled','in_progress','correction_required'].includes(job.status)?`<button class="platformBtn inline jobsBtn primary" data-action="execute-start">${job.status==='scheduled'?'Start Job':'Continue Job'}</button>`:''}</div></div>`;
+      if(canPlan()&&['in_progress','correction_required'].includes(job.status)&&openSessions(job).length)return `<div class="jobsActionBar"><b>Open technician sessions</b><div class="jobsActionButtons">${openSessions(job).map(s=>`<button class="platformBtn inline jobsBtn danger" data-action="execute-recover" data-session="${h(s.id)}">Emergency Close Session — ${h(s.employeeName)}</button>`).join('')}</div></div>`;
+    }
+    if(canPlan() && !['completed','cancelled','submitted_for_review'].includes(job.status))return `<div class="jobsActionBar"><div class="jobsActionCopy"><b>Job planning</b><span>Supervisor work sessions are separate; review follows Job state.</span></div><div class="jobsActionButtons"><button class="platformBtn inline jobsBtn secondary" data-action="plan-team">Manage technicians</button>${['draft','scheduled'].includes(job.status)?'<button class="platformBtn inline jobsBtn secondary" data-action="plan-schedule">Schedule / reschedule</button>':''}</div></div>`;
+    if (!isMockMode) return '<div class="jobsReviewBanner"><b>Job record</b><p>Use available lifecycle actions above. Evidence and media remain unavailable.</p></div>';
     let buttons = "";
     let title = "Job record";
     let copy = "Review the current facts and activity for this Job.";
@@ -599,6 +709,35 @@
     return `<div class="jobsActionBar"><div class="jobsActionCopy"><b>${h(title)}</b><span>${h(copy)}</span></div><div class="jobsActionButtons">${buttons}</div></div>`;
   }
 
+  function reviewBar(job) {
+    if(isMockMode)return '';
+    const closed=['completed','cancelled'].includes(job.status);
+    const buttons=[];
+    const action=(method,label)=>`<button class="platformBtn inline jobsBtn ${method==='approve'?'success':method==='cancel'?'danger':'secondary'}" data-action="review-${method}">${label}</button>`;
+    const method=job.correctedAt?'resubmit':'submit';
+    if(reviewAllowed(method,job))buttons.push(action(method,method==='resubmit'?'Resubmit for Review':'Submit for Review'));
+    if(reviewAllowed('returnCorrection',job))buttons.push(action('returnCorrection','Return for Correction'));
+    if(reviewAllowed('approve',job))buttons.push(action('approve','Approve & Complete'));
+    if(reviewAllowed('cancel',job))buttons.push(action('cancel','Cancel Job'));
+    const blockers=!closed&&(isLead(job)||canPlan())&&openSessions(job).length?`<p>Finish open work sessions before submission, approval or cancellation: ${openSessions(job).map(s=>`${h(s.employeeName||s.employeeId)} — started ${h(localDateTime(s.startedAt))}`).join('; ')}. Sessions are never closed automatically.</p>`:'';
+    const correction=job.correctionReason?`<p><b>Correction required:</b> ${h(job.correctionReason)}</p>`:'';
+    const cancellation=job.cancelReason?`<p><b>Cancellation reason:</b> ${h(job.cancelReason)}</p>`:'';
+    return `<section class="jobsReviewBanner"><b>${closed?'Historical Job — read-only':job.status==='submitted_for_review'?'Awaiting manager review':'Job lifecycle'}</b>${correction}${cancellation}${blockers}${!closed&&isLead(job)&&!job.workDays.some(d=>d.work?.trim())?'<p>Record work before submitting for review.</p>':''}<div class="jobsActionButtons">${buttons.join('')}</div><details class="jobsEvidenceDisclosure"><summary>Activity history</summary><div class="jobsTimeline">${job.activity.slice().reverse().map(a=>timeline(a.actor,a.summary,a.at)).join('')||'<p>No activity returned.</p>'}</div></details></section>`;
+  }
+
+  function openReview(method) {
+    if(planningPending||planningRefreshRequired||!reviewAllowed(method))return;
+    const id=liveDetail.id;planningJobId=id;
+    const titles={submit:'Submit for Review',resubmit:'Resubmit for Review',returnCorrection:'Return for Correction',approve:'Approve and Complete Job?',cancel:'Cancel Job'};
+    const needsReason=['returnCorrection','cancel'].includes(method);
+    openModal({planning:true,title:titles[method],submitLabel:titles[method],copy:method==='approve'?'Completion is final. The backend freezes the historical Job record.':method==='cancel'?'Cancellation preserves the Job and its history. It does not close sessions.':'This action uses the current authoritative Job revision.',body:`${needsReason?label('reason',method==='cancel'?'Cancellation reason':'Correction reason','<textarea class="jobsInput" name="NAME" required></textarea>'):''}<label class="jobsCheck"><input type="checkbox" name="confirmLifecycle"/>I confirm this action for ${h(liveDetail.jobNumber)}.</label>`,onSubmit:async form=>{
+      if(liveDetail?.id!==id||!reviewAllowed(method))throw new Error('This lifecycle action is no longer available. Check the refreshed Job.');
+      if(modal.querySelector('[name="confirmLifecycle"]').checked!==true)throw new Error('Explicit confirmation is required.');
+      if(needsReason&&!form.get('reason')?.trim())throw new Error('A reason is required.');
+      await planningMutation(method,[id,liveDetail.revision,...(needsReason?[form.get('reason').trim()]:[])],id);
+    }});
+  }
+
   function renderTab(job, tab, readOnly) {
     if (role === "admin") {
       const renderers = { overview: adminOverviewTab, work: adminWorkTab, "team-time": adminTeamTimeTab, review: adminReviewTab, card: jobCardTab };
@@ -626,7 +765,8 @@
   function teamTab(job) { return panel("Assigned team", "", `<div class="jobsDetailGrid">${job.team.map((person) => `<div class="jobsFieldCard"><div class="jobsPerson"><div class="jobsAvatar">${initials(person.name)}</div><div><b>${h(person.name)}</b><span>${h(person.employeeId)} · ${h(person.employeeId === job.lead?.employeeId ? "Lead Supervisor" : person.role)}</span></div></div></div>`).join("")}</div>`); }
   function todayWorkTab(job, readOnly) {
     const active = currentSession(job);
-    if (readOnly) return panel(job.status === "completed" ? "Completed Job" : "Awaiting Review", "", `<div class="emptyState">This work record is read-only.</div>`);
+    if(!isMockMode)return panel("Today's work",'',`<p>${active?`Your session started ${h(localDateTime(active.startedAt))}. Use Finish Work for Today to record work and pause.`:'No own open session. Previous work remains in Job Records.'}</p>`);
+    if (readOnly) return panel(job.status === "completed" ? "Completed Job" : !isMockMode ? "Today's work" : "Awaiting Review", "", `<div class="emptyState">This work record is read-only.</div>`);
     if (!active) return panel("Today's work", "", `<div class="jobsTodayEmpty"><i class="ph ph-play-circle"></i><b>${job.status === "scheduled" ? "Start this Job to begin today's work." : "Continue this Job to begin a new work day."}</b><button class="platformBtn inline jobsBtn primary" type="button" data-action="start">${job.status === "scheduled" ? "Start Job" : "Continue Job"}</button></div>`);
     const draft = job.currentDraft || { work: "", notes: "" };
     return `<form id="jobsTodayForm" class="jobsTodayForm"><div class="jobsTodayHead"><div><span>Today's work</span><h2>${localDate(new Date().toISOString().slice(0, 10))}</h2></div><span class="mutedText">Session started ${localDateTime(active.startedAt)}</span></div><label class="jobsLabel jobsWorkDescription">Work Performed<textarea class="jobsInput platformInput" name="todayWork" required placeholder="Describe the work completed today">${h(draft.work)}</textarea></label>
@@ -636,9 +776,10 @@
   }
   function materialsTab(job, readOnly) { return panel("Materials used", "", dataRows(job.materials, (item) => `<div><b>${h(item.description)}</b><span>${h(item.by)} · ${localDateTime(item.addedAt)}</span></div><strong>${h(item.quantity)} ${h(item.unit)}</strong>`), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-material"><i class="ph ph-plus"></i>Add material</button>` : ""); }
   function testingTab(job, readOnly) { return panel("Testing & results", "", dataRows(job.testing, (item) => `<div><b>${h(item.description)}</b><span>${h(item.note || "No additional note")} · ${h(item.by)}</span></div><strong>${h(item.result)}</strong>`), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-test"><i class="ph ph-plus"></i>Add result</button>` : ""); }
-  function photosTab(job, readOnly) { return panel("Photos", "", job.photos.length ? `<div class="jobsPhotoGrid">${job.photos.map((item) => `<article class="jobsPhoto"><div class="jobsPhotoVisual"><i class="ph ph-image"></i></div><div class="jobsPhotoMeta"><b>${h(item.category)}</b><span>${h(item.note || "No note")} · ${localDateTime(item.at)}</span></div></article>`).join("")}</div>` : empty("camera", "No photos added", "Before, During, After and Other photos will appear here."), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-photo"><i class="ph ph-camera"></i>Add photo</button>` : ""); }
+  function photosTab(job, readOnly) { if (!mediaAvailable()) return panel("Photos", "", '<p>Media will be available in a later phase.</p><button type="button" disabled>Add photo</button>'); return panel("Photos", "", job.photos.length ? `<div class="jobsPhotoGrid">${job.photos.map((item) => `<article class="jobsPhoto"><div class="jobsPhotoVisual"><i class="ph ph-image"></i></div><div class="jobsPhotoMeta"><b>${h(item.category)}</b><span>${h(item.note || "No note")} · ${localDateTime(item.at)}</span></div></article>`).join("")}</div>` : empty("camera", "No photos added", "Before, During, After and Other photos will appear here."), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-photo"><i class="ph ph-camera"></i>Add photo</button>` : ""); }
   function notesTab(job, readOnly) { return panel("Notes", "", job.notes.length ? `<div class="jobsTimeline">${job.notes.slice().reverse().map((item) => timeline(item.by, item.text, item.at)).join("")}</div>` : empty("note", "No notes", "Notes will appear here."), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" data-action="add-note"><i class="ph ph-plus"></i>Add note</button>` : ""); }
   function signoffTab(job, readOnly) {
+    if (!mediaAvailable()) return panel('Client sign-off', '', '<p>Signature capture will be available in a later phase.</p><button type="button" disabled>Capture sign-off</button>');
     const signoff = job.signoff;
     const body = signoff ? `<div class="jobsDetailGrid"><div class="jobsFieldCard"><span>Client</span><b>${h(signoff.clientName || "Unavailable")}</b></div><div class="jobsFieldCard"><span>Timestamp</span><b>${localDateTime(signoff.signedAt)}</b></div></div><div class="jobsSignature ${signoff.unavailable ? "" : "signed"}" style="margin-top:12px;">${signoff.unavailable ? `<div><i class="ph ph-user-minus"></i><b>Signature unavailable</b><div>${h(signoff.reason)}</div></div>` : h(signoff.signature || signoff.clientName)}</div>` : empty("signature", "No client sign-off", "A signature is optional; an unavailable reason may be recorded instead.");
     return panel("Client sign-off", "", body, !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" data-action="signoff"><i class="ph ph-signature"></i>${signoff ? "Update" : "Capture"} sign-off</button>` : "");
@@ -670,7 +811,7 @@
     let company = null;
     try { company = typeof currentCompany === "function" ? currentCompany() : null; } catch {}
     return {
-      name: String(company?.name || (isLocalDevelopment ? "Demo Service Company" : "Company")),
+      name: String(company?.name || (isMockMode ? "Demo Service Company" : "Company")),
       logoUrl: String(company?.logo_url || "").trim()
     };
   }
@@ -686,6 +827,7 @@
       <div class="jobsPaperSection"><h3>Work carried out</h3>${job.workDays.map((day, index) => `<p><b>Day ${index + 1} · ${localDate(day.date)}</b><br>${h(day.work)}${day.notes ? `<br><i>${h(day.notes)}</i>` : ""}</p>`).join("<br>") || "<p>No work record.</p>"}</div>
       <div class="jobsPaperSection"><h3>Materials</h3>${paperTable(["Description", "Quantity", "Unit"], job.materials.map((item) => [item.description, item.quantity, item.unit]))}</div>
       <div class="jobsPaperSection"><h3>Testing & results</h3>${paperTable(["Check", "Result", "Note"], job.testing.map((item) => [item.description, item.result, item.note || "-"]))}</div>
+      <div class="jobsPaperSection"><h3>Notes</h3>${job.notes.map(n=>`<p>${h(n.text)}</p>`).join('')||'<p>None recorded.</p>'}</div>
       <div class="jobsPaperSection"><h3>Work sessions</h3>${paperTable(["Team member", "Start", "Finish", "Duration"], job.sessions.map((item) => [item.employeeName, localDateTime(item.startedAt), item.endedAt ? localDateTime(item.endedAt) : "Open", duration(minutesBetween(item.startedAt, item.endedAt))]))}<p style="margin-top:10px"><b>Total Job time: ${duration(totalMinutes(job))}</b></p></div>
       <div class="jobsPaperSection"><h3>Team</h3><p>${job.team.map((person) => `${h(person.name)} (${h(person.employeeId)})`).join(", ")}</p></div>
       <div class="jobsPaperSection"><h3>Photos</h3><p>${job.photos.length} photo record${job.photos.length === 1 ? "" : "s"}: ${job.photos.map((item) => h(item.category)).join(", ") || "None"}</p></div>
@@ -696,8 +838,9 @@
 
   function paperTable(headings, rows) { return rows.length ? `<table class="jobsPaperTable"><thead><tr>${headings.map((value) => `<th>${h(value)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${h(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<p>None recorded.</p>`; }
 
-  function openJob(id) {
-    if (!state.jobs.some((job) => job.id === id)) return;
+  function openJob(id, loaded = false) {
+    if (!isMockMode && !loaded) return loadLiveDetail(id);
+    if (isMockMode && !state.jobs.some((job) => job.id === id)) return;
     detailReturnSurface = allJobsWorkspace ? "all-jobs" : "dashboard";
     if (detailReturnSurface === "all-jobs") {
       allJobsScroll = allJobsWorkspace.querySelector(".jobsAllJobsBody")?.scrollTop || 0;
@@ -719,6 +862,7 @@
   }
 
   function closeJob() {
+    if (!isMockMode) { liveRequest++;liveDetail=null;selectedJobId=''; }
     if (!workspace) return;
     closeModal();
     const returnToAllJobs = detailReturnSurface === "all-jobs" && allJobsWorkspace;
@@ -744,10 +888,13 @@
     detailReturnSurface = "dashboard";
   }
   function updateJob() {
-    state = dataService.getState(); dashboardDirty = true; renderDetail();
+    if (!isMockMode) return; // Live workflows refresh authoritative adapter data.
+    state = mockState(); dashboardDirty = true; renderDetail();
   }
 
-  function openModal({ title, copy = "", body, submitLabel = "Save", tone = "primary", onSubmit }) {
+  function openModal({ title, copy = "", body, submitLabel = "Save", tone = "primary", onSubmit, planning = false }) {
+    if (!isMockMode && !(planning && canOperate())) { toast('This workflow is unavailable in this checkpoint.'); return; }
+    modalPlanning=planning;
     modalSubmit = onSubmit;
     modal.innerHTML = `<div class="jobsModalCard ${title === "Create Job" ? "jobsCreateModal" : ""}" role="dialog" aria-modal="true" aria-labelledby="jobsModalTitle"><form id="jobsModalForm"><div class="jobsModalHead"><div><h2 id="jobsModalTitle">${h(title)}</h2>${copy ? `<p>${h(copy)}</p>` : ""}</div><button class="jobsIconBtn" type="button" data-modal-close aria-label="Close"><i class="ph ph-x"></i></button></div><div class="jobsModalBody">${body}</div><div class="jobsModalActions"><button class="platformBtn inline jobsBtn secondary" type="button" data-modal-close>Cancel</button><button class="platformBtn inline jobsBtn ${tone}" type="submit">${h(submitLabel)}</button></div></form></div>`;
     modal.hidden = false; modal.setAttribute("aria-hidden", "false");
@@ -755,32 +902,215 @@
     setTimeout(() => modal.querySelector("input,textarea,select,button")?.focus(), 0);
   }
 
-  function closeModal() { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); modal.innerHTML = ""; modalSubmit = null; if (workspace) { workspace.inert = false; workspace.querySelector('.jobsWorkspaceCard')?.focus({ preventScroll: true }); } }
+  function closeModal() { modal.hidden = true; modal.setAttribute("aria-hidden", "true"); modal.innerHTML = ""; modalSubmit = null; if (workspace) { if(!isMockMode && liveDetail)renderDetail(); workspace.inert = false; workspace.querySelector('.jobsWorkspaceCard')?.focus({ preventScroll: true }); } }
   const label = (name, text, input, wide = false) => `<label class="jobsLabel ${wide ? "wide" : ""}">${text}${input.replace("NAME", name)}</label>`;
   const input = (type, placeholder = "", required = false, value = "") => `<input class="jobsInput" name="NAME" type="${type}" placeholder="${h(placeholder)}" value="${h(value)}" ${required ? "required" : ""}/>`;
 
   function createJobModal() {
+    const directories = getDirectories();
+    if (!directories) { toast('Jobs directories are not available yet.'); return; }
     openModal({ title: "Create Job", submitLabel: "Create Job", body: `<div class="jobsCreateSections">
-      <section><h3>Job</h3><div class="jobsFormGrid jobsFormGridThree">${label("title", "Job Title", input("text", "e.g. DB board repair", true), true)}${label("priority", "Priority", `<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select>`)}${label("scheduled", "Scheduled Date", input("date", "", true))}${label("scheduledTime", "Scheduled Time (optional)", input("time"))}${label("site", "Shiftly Site (optional)", `<select class="jobsInput" name="NAME"><option value="">No linked site</option><option>Workshop</option><option>Administration Block</option><option>Production Line 3</option></select>`, true)}</div></section>
+      <section><h3>Job</h3><div class="jobsFormGrid jobsFormGridThree">${label("title", "Job Title", input("text", "e.g. DB board repair", true), true)}${label("priority", "Priority", `<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select>`)}${label("scheduleIntent", "Schedule this Job", `<input type="checkbox" name="NAME" value="yes"/>`)}${label("scheduled", "Scheduled Date", input("date"))}${label("scheduledTime", "Scheduled Time (optional)", input("time"))}${label("site", "Shiftly Site (optional)", `<select class="jobsInput" name="NAME"><option value="">No linked site</option>${directories.sites.map(site=>`<option value="${h(site.siteId)}">${h(site.name)}</option>`).join("")}</select>`, true)}</div></section>
       <section><h3>Client</h3><div class="jobsFormGrid">${label("clientName", "Client Name", input("text", "e.g. Demo Engineering", true))}${label("contactName", "Contact Name", input("text", "Contact person"))}${label("phone", "Phone", input("tel", "+27"))}${label("email", "Email", input("email", "name@example.test"))}${label("address", "Service Address", input("text", "Street / area / province", true), true)}</div></section>
       <section><h3>Work Required</h3>${label("description", "Client Request / Job Description", `<textarea class="jobsInput" name="NAME" placeholder="What must the field team do?" required></textarea>`, true)}</section>
-      <section><h3>Assign Team</h3><div class="jobsFormGrid">${label("lead", "Lead Supervisor", `<select class="jobsInput" name="NAME"><option value="E100">Thabo Mokoena</option></select>`)}<label class="jobsLabel">Find Team Members<input id="jobsTeamSearch" class="jobsInput" type="search" placeholder="Search employees"/></label></div><div class="jobsTeamPicker">${teamDirectory.slice(1).map((person) => `<label class="jobsCheck" data-team-option="${h(`${person.name} ${person.role}`.toLowerCase())}"><input type="checkbox" name="team" value="${person.employeeId}"/><span><b>${h(person.name)}</b><small>${h(person.role)} · ${h(person.employeeId)}</small></span></label>`).join("")}</div></section>
+      <section><h3>Assign Team</h3><div class="jobsFormGrid">${label("lead", "Lead Supervisor", `<select class="jobsInput" name="NAME">${directories.leads.map(person=>`<option value="${h(person.employeeId)}">${h(person.name)}</option>`).join("")}</select>`)}<label class="jobsLabel">Find Team Members<input id="jobsTeamSearch" class="jobsInput" type="search" placeholder="Search employees"/></label></div><div class="jobsTeamPicker">${directories.team.filter(person=>!directories.leads.some(lead=>lead.employeeId===person.employeeId)).map((person) => `<label class="jobsCheck" data-team-option="${h(`${person.name} ${person.role}`.toLowerCase())}"><input type="checkbox" name="team" value="${person.employeeId}"/><span><b>${h(person.name)}</b><small>${h(person.role)} · ${h(person.employeeId)}</small></span></label>`).join("")}</div></section>
     </div>`, onSubmit: async (data) => {
+      if (!isMockMode || !dataService) throw new Error('Jobs backend connection is not active.');
+      if(modal.querySelector('[name="scheduleIntent"]').checked && !data.get('scheduled')) throw new Error('Choose a date to schedule this Job.');
       const job = await dataService.create({ title: data.get("title"), clientName: data.get("clientName"),
         clientContactName: data.get("contactName"), clientPhone: data.get("phone"), clientEmail: data.get("email"),
-        site: data.get("site"), serviceAddress: data.get("address"), scheduledDate: data.get("scheduled"),
+        siteId: data.get("site"), site: directories.sites.find(site=>site.siteId===data.get("site"))?.name || "", scheduleRequested: modal.querySelector('[name="scheduleIntent"]').checked, serviceAddress: data.get("address"), scheduledDate: data.get("scheduled"),
         scheduledTime: data.get("scheduledTime"), priority: data.get("priority"), description: data.get("description"),
         teamIds: data.getAll("team"), leadId: data.get("lead") });
-      state = dataService.getState(); closeModal(); toast(`${job.jobNumber} created`); openJob(job.id); dashboardDirty = true;
+      state = mockState(); closeModal(); toast(`${job.jobNumber} created`); openJob(job.id); dashboardDirty = true;
+    }});
+  }
+
+  async function planningDirectories() {
+    if(!canPlan())throw new Error('Job planning is unavailable.');
+    if(directoryCache)return directoryCache;
+    const key=JSON.stringify(liveContext()),request=++directoryRequest;
+    toast('Loading company sites and technicians…');
+    const data=await liveAdapter.directories();
+    if(key!==JSON.stringify(liveContext()) || request!==directoryRequest || !canPlan())return null;
+    directoryCache=data;return data;
+  }
+
+  function validatePlanCreate(data,dirs) {
+    if(!data.title?.trim()||!data.clientName?.trim())throw new Error('Title and client name are required.');
+    if(data.siteId&&!dirs.sites.some(s=>s.siteId===data.siteId))throw new Error('Choose a current company site.');
+    if(!dirs.leads.some(e=>e.employeeId===data.leadId))throw new Error('Choose an eligible Lead Technician.');
+    if(new Set(data.teamIds).size!==data.teamIds.length)throw new Error('Duplicate technician selection.');
+    if(data.teamIds.some(id=>!dirs.team.some(e=>e.employeeId===id)))throw new Error('Choose current company technicians.');
+    if(data.scheduleRequested && !data.scheduledDate)throw new Error('Choose a schedule start date.');
+    if(data.scheduleRequested)planDate(data.scheduledDate,data.scheduledTime);
+    return {...data,siteId:data.siteId||null,teamIds:data.teamIds.includes(data.leadId)?data.teamIds:[data.leadId,...data.teamIds]};
+  }
+  function planDate(date,time='08:00') {
+    const value=`${date}T${time||'08:00'}:00+02:00`;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date||'')||!Number.isFinite(Date.parse(value)))throw new Error('Choose a valid date and time.');
+    return value;
+  }
+  function planningError(message,refresh=false) {
+    let box=modal.querySelector('.jobsPlanningError');
+    if(!box){box=document.createElement('div');box.className='jobsPlanningError jobsReviewBanner correction';box.setAttribute('role','alert');modal.querySelector('.jobsModalBody')?.prepend(box);}
+    box.innerHTML=`<p>${h(message)}</p>${refresh?'<button type="button" class="platformBtn inline jobsBtn secondary" data-plan-refresh>Refresh authoritative state</button>':''}`;
+  }
+  function lockPlanningForm(locked) {
+    modal.querySelectorAll('input,select,textarea,button').forEach(el=>{el.disabled=locked;});
+    const submit=modal.querySelector('button[type="submit"]');if(submit)submit.disabled=locked||planningRefreshRequired;
+    const create=root.querySelector('[data-action="plan-create"]');if(create)create.disabled=locked||planningRefreshRequired||!canPlan();
+  }
+  async function fetchPlanningState(jobId) {
+    const rows=await liveAdapter.list({offset:0,limit:25});
+    const detail=jobId?await liveAdapter.detail(jobId):null;
+    const workerActive=liveContext().role==='supervisor'?await liveAdapter.workEligibility():false;
+    return {rows,detail,workerActive};
+  }
+  async function refreshPlanning() {
+    if(!canOperate()||planningPending)return;
+    planningPending=true;lockPlanningForm(true);const key=JSON.stringify(liveContext());
+    try {
+      const fresh=await fetchPlanningState(planningJobId);
+      if(key!==JSON.stringify(liveContext())||!canOperate())return;
+      liveWorkerActive=fresh.workerActive;
+      state={jobs:fresh.rows,sequence:0};if(fresh.detail)liveDetail=fresh.detail;
+      planningRefreshRequired=false;
+      if(fresh.detail&&['completed','cancelled'].includes(fresh.detail.status)){
+        closeModal();closeJob();liveStatus='ready';renderLiveList();liveDetail=fresh.detail;openJob(fresh.detail.id,true);return;
+      }
+      planningError('Authoritative state refreshed. Check these records before deliberately retrying: '+fresh.rows.map(j=>`${j.jobNumber}: ${j.title}`).join('; '));
+    }catch(error){if(key===JSON.stringify(liveContext())){if(window.ShiftlyJobsData.errorState(error).category==='ACCESS_DENIED')await liveReadFailure(error);else planningError('Refresh failed. Do not resubmit until authoritative state can be checked.',true);}}
+    finally{if(key===JSON.stringify(liveContext())){planningPending=false;lockPlanningForm(false);}}
+  }
+  async function submitPlanning(action,data) {
+    if(!canOperate()||planningPending||planningRefreshRequired)return;
+    planningPending=true;lockPlanningForm(true);const key=JSON.stringify(liveContext()),adapter=liveAdapter;
+    try {await action(data);}
+    catch(error){if(adapter===liveAdapter&&key===JSON.stringify(liveContext())&&canOperate()&&!shell.hidden)planningError(error.message||'Unable to submit Job action.');}
+    finally{if(adapter===liveAdapter&&key===JSON.stringify(liveContext())){planningPending=false;lockPlanningForm(false);}}
+  }
+  async function planningMutation(method,args,jobId='') {
+    if(!canOperate()||!['create','assign','replaceLead','unassign','schedule','start','finish','adminCloseSession','submit','resubmit','returnCorrection','approve','cancel'].includes(method))throw new Error('Workflow unavailable.');
+    if(planningRefreshRequired)throw new Error('Refresh authoritative state before retrying.');
+    if(method!=='create') {
+      const job=liveDetail;
+      if(!job?.detailLoaded||job.id!==jobId||args[0]!==job.id||args[1]!==job.revision)throw new Error('Refresh this Job before continuing.');
+      if(['completed','cancelled'].includes(job.status))throw new Error('Closed Job is read-only.');
+      if(['assign','replaceLead','unassign'].includes(method)&&job.status==='submitted_for_review')throw new Error('Return Job for correction before changing team.');
+      if(method==='schedule'&&!['draft','scheduled'].includes(job.status))throw new Error('Only draft or scheduled Jobs can be scheduled.');
+      if(method==='replaceLead'&&openSessions(job).length)throw new Error('Finish all open Job sessions before replacing the lead.');
+      if(method==='unassign'&&(job.lead?.employeeId===args[2]||!job.team.some(e=>e.employeeId===args[2])||openSessions(job).some(s=>s.employeeId===args[2])))throw new Error('Choose an assigned non-lead technician without an open session.');
+      if(method==='start'&&(currentSession(job)||!['scheduled','in_progress','correction_required'].includes(job.status)))throw new Error('Start is no longer available.');
+      if(method==='finish'&&(!currentSession(job)||job.status!=='in_progress'||!args[2]?.trim()))throw new Error('Own open session and meaningful work required.');
+      if(method==='adminCloseSession'&&(!['in_progress','correction_required'].includes(job.status)||!openSessions(job).some(s=>s.id===args[2])||!args[3]?.trim()))throw new Error('Open session and recovery reason required.');
+    }
+    if(['submit','resubmit','returnCorrection','approve','cancel'].includes(method)){if(!reviewAllowed(method))throw new Error('This lifecycle action is no longer available. Refresh the Job.');}
+    else if(['start','finish'].includes(method)){if(!canExecute())throw new Error('Assigned active Supervisor required.');}
+    else if(!canPlan())throw new Error('Manager required.');
+    const key=JSON.stringify(liveContext()),adapter=liveAdapter;
+    const current=()=>adapter===liveAdapter&&key===JSON.stringify(liveContext())&&canOperate()&&!shell.hidden;
+    let confirmed=false;
+    try {
+      const result=await liveAdapter[method](...args);confirmed=true;
+      if(!current())return;
+      const id=method==='create'?result.id:jobId;
+      planningJobId=id;
+      const fresh=await fetchPlanningState(id);
+      if(!current())return;
+      closeModal();closeJob();state={jobs:fresh.rows,sequence:0};liveWorkerActive=fresh.workerActive;livePage={offset:0,limit:25,hasMore:fresh.rows.length===25};
+      liveStatus='ready';renderLiveList();liveDetail=fresh.detail;openJob(id,true);toast('Job action saved.');
+    }catch(error){
+      if(!current())return;
+      const failure=window.ShiftlyJobsData.errorState(error);
+      if(failure.category==='ACCESS_DENIED'){await liveReadFailure(error);return;}
+      if(confirmed || failure.category==='NETWORK_OR_UNKNOWN') {
+        planningRefreshRequired=true;
+        planningError(confirmed?'Saved, but refreshed state could not be loaded. Do not submit again. Refresh and close this form.':'Outcome could not be confirmed. Do not submit again until you refresh and check whether it succeeded.',true);
+        // A confirmed create must never become a second create via this form.
+        if(confirmed){modalSubmit=async()=>{closeModal();await loadLiveList(0);};modal.querySelector('button[type="submit"]').textContent='Return to Jobs';}
+      } else if(['STALE_REVISION','CONFLICT'].includes(failure.category)||(method==='cancel'&&failure.category==='VALIDATION')) {
+        try{const fresh=await fetchPlanningState(jobId);if(!current())return;state={jobs:fresh.rows,sequence:0};liveDetail=fresh.detail;liveWorkerActive=fresh.workerActive;
+          if(fresh.detail&&['completed','cancelled'].includes(fresh.detail.status)){planningRefreshRequired=false;closeModal();closeJob();liveStatus='ready';renderLiveList();liveDetail=fresh.detail;openJob(fresh.detail.id,true);return;}
+          if(method==='cancel'&&failure.category==='VALIDATION'){planningError(`${failure.message} Refreshed open sessions: ${openSessions(fresh.detail).map(s=>s.employeeName||s.employeeId).join(', ')||'none returned'}. No session was closed.`);return;}
+          planningError(failure.category==='STALE_REVISION'?'Job changed. Authoritative state refreshed; review your input and deliberately retry.':method==='start'?'You already have an open Job session. No session was closed or switched. Check your Jobs before retrying.':'Conflicting assignment. Authoritative state refreshed; review your selection.');}
+        catch(refreshError){if(!current())return;if(window.ShiftlyJobsData.errorState(refreshError).category==='ACCESS_DENIED'){await liveReadFailure(refreshError);return;}planningRefreshRequired=true;planningError('Job changed. Refresh authoritative state before retrying.',true);}
+      }else planningError(failure.message);
+    }
+  }
+  async function openPlanning(action) {
+    if(!canPlan()||planningPending)return;
+    if(planningRefreshRequired){await loadLiveList(0);toast('Refresh the authoritative list and check the previous result before retrying.');return;}
+    const key=JSON.stringify(liveContext());
+    try {
+      const dirs=await planningDirectories();if(!dirs||key!==JSON.stringify(liveContext()))return;
+      planningJobId=action==='create'?'':liveDetail?.id||'';
+      const options=people=>people.map(e=>`<option value="${h(e.employeeId)}">${h(e.name)}</option>`).join('');
+      if(action==='create') {
+        openModal({planning:true,title:'Create Job',submitLabel:'Create Job',copy:'Job number and snapshots are generated by the backend.',body:`<div class="jobsFormGrid">${label('title','Job Title',input('text','Job title',true))}${label('clientName','Client Name',input('text','Client name',true))}${label('contactName','Contact Name',input('text'))}${label('email','Client Email',input('email'))}${label('phone','Client Phone',input('tel'))}${label('site','Site',`<select name="NAME" class="jobsInput"><option value="">No linked site</option>${dirs.sites.map(s=>`<option value="${h(s.siteId)}">${h(s.name)}</option>`).join('')}</select>`)}${label('address','Service Address',input('text'))}${label('description','Work Required','<textarea name="NAME" class="jobsInput"></textarea>')}${label('priority','Priority','<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select>')}${label('lead','Lead Technician',`<select name="NAME" class="jobsInput" required><option value="">Select eligible lead</option>${options(dirs.leads)}</select>`)}${label('scheduleIntent','Schedule this Job','<input type="checkbox" name="NAME"/>')}${label('scheduled','Start date',input('date'))}${label('scheduledTime','Start time (South Africa)',input('time','','', '08:00'))}</div><h3>Assigned Technicians</h3><p>The selected lead is included automatically.</p><div class="jobsTeamPicker">${dirs.team.map(e=>`<label class="jobsCheck"><input type="checkbox" name="team" value="${h(e.employeeId)}"/>${h(e.name)}</label>`).join('')}</div>`,onSubmit:async form=>{
+          const data=validatePlanCreate({title:form.get('title'),clientName:form.get('clientName'),clientContactName:form.get('contactName'),clientEmail:form.get('email'),clientPhone:form.get('phone'),siteId:form.get('site'),serviceAddress:form.get('address'),description:form.get('description'),priority:form.get('priority'),leadId:form.get('lead'),teamIds:form.getAll('team'),scheduleRequested:modal.querySelector('[name="scheduleIntent"]').checked===true,scheduledDate:form.get('scheduled'),scheduledTime:form.get('scheduledTime')},dirs);
+          await planningMutation('create',[data]);
+        }});return;
+      }
+      const job=liveDetail;if(!job||['completed','cancelled','submitted_for_review'].includes(job.status))return;
+      if(action==='schedule') {
+        if(!['draft','scheduled'].includes(job.status))return;
+        openModal({planning:true,title:'Schedule / reschedule Job',submitLabel:'Save schedule',body:`<p>Times use South Africa time (UTC+02:00).</p><div class="jobsFormGrid">${label('startDate','Start date',input('date','',true,job.scheduledDate))}${label('startTime','Start time',input('time','',true,job.scheduledTime||'08:00'))}${label('endDate','End date (optional)',input('date'))}${label('endTime','End time (optional)',input('time'))}</div>`,onSubmit:async form=>{
+          const start=planDate(form.get('startDate'),form.get('startTime'));
+          if(form.get('endTime')&&!form.get('endDate'))throw new Error('Choose an end date.');
+          const end=form.get('endDate')?planDate(form.get('endDate'),form.get('endTime')):null;
+          if(end&&Date.parse(end)<Date.parse(start))throw new Error('End must not precede start.');
+          await planningMutation('schedule',[job.id,liveDetail.revision,start,end],job.id);
+        }});return;
+      }
+      openModal({planning:true,title:'Manage technicians',submitLabel:'Apply team change',body:`<p>Lead Technician: ${h(job.lead?.name||'Unassigned')}. Replace the lead atomically; lead removal is not offered.</p><div class="jobsFormGrid">${label('operation','Change','<select name="NAME" class="jobsInput"><option value="assign">Add assigned technician</option><option value="replaceLead">Replace Lead Technician</option><option value="unassign">Remove assigned technician</option></select>')}${label('employee','Assigned Technician',`<select name="NAME" class="jobsInput">${options(dirs.team)}</select>`)}${label('lead','Eligible Lead Technician',`<select name="NAME" class="jobsInput">${options(dirs.leads)}</select>`)}</div>`,onSubmit:async form=>{
+        const method=form.get('operation'),id=method==='replaceLead'?form.get('lead'):form.get('employee');
+        if(!['assign','replaceLead','unassign'].includes(method))throw new Error('Invalid team operation.');
+        if(!(method==='replaceLead'?dirs.leads:dirs.team).some(e=>e.employeeId===id))throw new Error('Choose an eligible technician.');
+        if(method==='unassign'&&(liveDetail.lead?.employeeId===id||!liveDetail.team.some(e=>e.employeeId===id)))throw new Error('Choose an assigned non-lead technician.');
+        if(method==='assign'&&liveDetail.team.some(e=>e.employeeId===id))throw new Error('Technician is already assigned.');
+        await planningMutation(method,[job.id,liveDetail.revision,id,...(method==='assign'?['member']:[])],job.id);
+      }});
+    }catch(error){if(key===JSON.stringify(liveContext())){if(window.ShiftlyJobsData.errorState(error).category==='ACCESS_DENIED')await liveReadFailure(error);else toast(error.message||'Directories unavailable.');}}
+  }
+
+  function openExecution(action,sessionId='') {
+    if(!canOperate()||planningPending)return;
+    if(planningRefreshRequired){toast('Refresh authoritative state before retrying.');return;}
+    const job=liveDetail;if(!job)return;
+    const own=currentSession(job);
+    if(action==='start'&&(!canExecute(job)||own||!['scheduled','in_progress','correction_required'].includes(job.status)))return;
+    if(action==='finish'&&(!canExecute(job)||!own||job.status!=='in_progress'))return;
+    if(action==='recover'&&(!canPlan()||!['in_progress','correction_required'].includes(job.status)||!openSessions(job).some(s=>s.id===sessionId)))return;
+    planningJobId=job.id;
+    const title=action==='start'?(job.status==='scheduled'?'Start Job':'Continue Job'):action==='finish'?'Finish Work for Today':'Emergency Close Session';
+    const body=action==='start'?'<p>Start a Job work session. This does not clock you in for attendance.</p>':action==='finish'?`${label('work','Work performed','<textarea name="NAME" class="jobsInput" required></textarea>')}${label('notes','Notes','<textarea name="NAME" class="jobsInput"></textarea>')}`:`<p>Emergency recovery only. The original start time is preserved; the backend records the end time and audit reason.</p>${label('reason','Required recovery reason','<textarea name="NAME" class="jobsInput" required></textarea>')}<label class="jobsCheck"><input type="checkbox" name="confirmRecovery"/>I confirm emergency closure of this selected session.</label>`;
+    openModal({planning:true,title,body,submitLabel:title,onSubmit:async form=>{
+      const current=liveDetail;
+      if(!current||current.id!==job.id)throw new Error('Refresh this Job before continuing.');
+      if(action==='start') {
+        if(!canExecute(current)||currentSession(current)||!['scheduled','in_progress','correction_required'].includes(current.status))throw new Error('Start is no longer available. Check the refreshed session.');
+        await planningMutation('start',[current.id,current.revision],current.id);
+      }else if(action==='finish') {
+        if(!canExecute(current)||!currentSession(current)||currentSession(current).id!==own.id||current.status!=='in_progress')throw new Error('No own open session matching this work form is available.');
+        if(!form.get('work')?.trim())throw new Error('Work performed is required.');
+        await planningMutation('finish',[current.id,current.revision,form.get('work').trim(),form.get('notes')||''],current.id);
+      }else {
+        if(!canPlan()||!['in_progress','correction_required'].includes(current.status)||!openSessions(current).some(s=>s.id===sessionId))throw new Error('Selected open session is unavailable.');
+        if(!form.get('reason')?.trim()||modal.querySelector('[name="confirmRecovery"]').checked!==true)throw new Error('A reason and explicit confirmation are required.');
+        await planningMutation('adminCloseSession',[current.id,current.revision,sessionId,form.get('reason').trim()],current.id);
+      }
     }});
   }
 
   async function startJob(job) {
+    if (!isMockMode) throw new Error('Jobs is read-only in this checkpoint.');
     await dataService.start(job.id, job.revision);
     activeTab = "today"; updateJob(); toast("Work session started");
   }
 
   async function finishWork(job, open, work, notes) {
+    if (!isMockMode) throw new Error('Jobs is read-only in this checkpoint.');
     await dataService.finish(job.id, job.revision, work, notes);
     activeTab = "records"; closeModal(); updateJob(); toast("Today's work saved");
   }
@@ -820,7 +1150,7 @@
   function addTestModal() { simpleEntryModal("Test result", { title:"Add Test / Check",submitLabel:"Add Result",
     body: `<div class="jobsFormGrid">${label("description", "Test / check description", input("text", "e.g. Insulation resistance", true), true)}${label("result", "Result", input("text", "PASS / reading", true))}${label("note", "Note", input("text", "Optional supporting detail"))}</div>`,
     save:(job,data)=>dataService.evidence(job.id,job.revision,"test",{description:data.get("description"),result:data.get("result"),note:data.get("note")}) }); }
-  function addPhotoModal() { simpleEntryModal("Photo", { title:"Add Photo",submitLabel:"Add Photo",
+  function addPhotoModal() { if(!mediaAvailable()){toast('Media will be available in a later phase.');return;} simpleEntryModal("Photo", { title:"Add Photo",submitLabel:"Add Photo",
     body: `<div class="jobsFormGrid">${label("category", "Category", `<select class="jobsInput" name="NAME"><option>Before</option><option>During</option><option>After</option><option>Other</option></select>`)}${label("note", "Optional note", input("text", "What does the photo show?"), true)}</div>`,
     save:(job,data)=>dataService.evidence(job.id,job.revision,"photo",{category:data.get("category"),note:data.get("note")}) }); }
   function addNoteModal() { simpleEntryModal("Note", { title:"Add Job Note",submitLabel:"Add Note",
@@ -828,6 +1158,7 @@
     save:(job,data)=>dataService.evidence(job.id,job.revision,"note",{text:data.get("note")}) }); }
 
   function signoffModal() {
+    if(!mediaAvailable()){toast('Media will be available in a later phase.');return;}
     const job = selectedJob(); if (!job) return;
     openModal({ title: "Client Sign-off", copy: "Signature is optional. Record an unavailable reason when needed.", submitLabel: "Save Sign-off", body: `<div class="jobsFormGrid">${label("clientName", "Client Name", input("text", "Name of client representative", false, job.clientContactName || ""), true)}<label class="jobsCheck wide"><input id="jobsSignatureUnavailable" type="checkbox" name="unavailable"/>Client unavailable / no signature</label>${label("reason", "No-signature reason", input("text", "Optional reason"), true)}<div class="wide"><div class="jobsLabel" style="margin-bottom:6px">Signature area</div><canvas id="jobsSignatureCanvas" class="jobsSignature" width="640" height="180" aria-label="Client signature area"></canvas><button id="jobsClearSignature" class="platformBtn inline jobsBtn small secondary" type="button" style="margin-top:8px">Clear signature</button></div></div>`, onSubmit: async (data) => {
       const unavailable = data.get("unavailable") === "on"; const clientName = data.get("clientName").trim(); const canvas = modal.querySelector("#jobsSignatureCanvas");
@@ -867,13 +1198,21 @@
   async function openJobs(nextRole, jobId = "") {
     const context = currentJobsContext();
     if (nextRole === "employee") return;
-    if (!isLocalDevelopment || !demoRoleFromUrl()) {
-      if (!window.ShiftlyJobsData.canOpen(context)) { ensureDom(); toast("Jobs is disabled or unavailable for this account."); return; }
-      // This phase prepares the adapter only. No implicit backend connection.
-      ensureDom(); toast("Jobs backend connection awaits execution review."); return;
+    if (!isMockMode) {
+      ensureDom(); contextChanged();closeJob(); closeAllJobs(false); closeModal(); shell.hidden = true;
+      state = {jobs:[],sequence:0};liveDrafts.clear();directoryCache=null;jobsViewState?.clear();
+      if (!window.ShiftlyJobsData.canOpen(context)) { toast("Jobs is disabled or unavailable for this account."); return; }
+      if (typeof sb === 'undefined') { toast('Existing Shiftly connection is unavailable.'); return; }
+      liveAdapter?.clear();
+      liveAdapter=window.ShiftlyJobsData.createSupabase({client:sb,getContext:liveContext,readOnly:true,planning:['owner','admin'].includes(context.role),execution:true,review:true});
+      role=context.role==='supervisor'?'supervisor':'admin';
+      hideOperationalShells();shell.hidden=false;screen='dashboard';
+      await loadLiveList(0);
+      if(jobId && !shell.hidden) await loadLiveDetail(jobId);
+      return;
     }
     if (!dataService) return;
-    setLocalContext(nextRole); state = dataService.getState();
+    setLocalContext(nextRole); state = mockState();
     ensureDom(); closeJob(); closeAllJobs(false); role = nextRole === "supervisor" ? "supervisor" : "admin";
     try { if (typeof stopScanning === "function") await stopScanning(); } catch {}
     hideOperationalShells(); shell.hidden = false;
@@ -882,8 +1221,10 @@
   }
 
   async function closeJobs() {
+    if (!isMockMode) { liveRequest++;liveAdapter?.clear();liveAdapter=null;liveDetail=null;state={jobs:[],sequence:0};directoryRequest++;directoryCache=null;liveDrafts.clear();liveWorkerActive=false;planningPending=false; }
     closeJob(); closeAllJobs(false);
     shell.hidden = true; closeModal();
+    if (!isMockMode) root.innerHTML='';
     if (isLocalDevelopment && demoRoleFromUrl()) { const auth = document.getElementById("authScreen"); if (auth) auth.hidden = false; return; }
     try {
       const appRole = getAppRole();
@@ -910,7 +1251,7 @@
   }
 
   function getAppRole() {
-    try { return String(typeof currentCompanyRole === "undefined" ? "" : currentCompanyRole).toLowerCase(); } catch { return ""; }
+    return String(currentJobsContext().role || '').toLowerCase();
   }
 
   function syncEntrypoints() {
@@ -959,11 +1300,12 @@
     });
     root.addEventListener("input", (event) => {
       if (event.target.id === "jobsSearch") { adminSearch = event.target.value; const cursor = event.target.selectionStart; renderAllJobs(); const next = allJobsWorkspace?.querySelector("#jobsSearch"); next?.focus(); next?.setSelectionRange(cursor, cursor); }
-      if (["todayWork", "todayNotes"].includes(event.target.name)) { const job = selectedJob(); if (job) { job.currentDraft ||= { work: "", notes: "" }; job.currentDraft[event.target.name === "todayWork" ? "work" : "notes"] = event.target.value; try { dataService.saveDraft(job.id,job.currentDraft); } catch(error) { toast(error.message); } } }
+      if (["todayWork", "todayNotes"].includes(event.target.name)) { const job = selectedJob(); if (job) { job.currentDraft ||= { work: "", notes: "" }; job.currentDraft[event.target.name === "todayWork" ? "work" : "notes"] = event.target.value; try { if(isMockMode) dataService.saveDraft(job.id,job.currentDraft); else liveDrafts.set(job.id,{...job.currentDraft}); } catch(error) { toast(error.message); } } }
     });
     root.addEventListener("submit", (event) => { if (event.target.id !== "jobsTodayForm") return; event.preventDefault(); const job = selectedJob(); const open = job && currentSession(job); if (!job || !open) return; const data = new FormData(event.target); performAction(() => finishWork(job, open, data.get("todayWork"), data.get("todayNotes"))); });
     modal.addEventListener("click", (event) => { if (event.target === modal || event.target.closest("[data-modal-close]")) closeModal(); });
-    modal.addEventListener("submit", (event) => { event.preventDefault(); if (modalSubmit) { const action=modalSubmit; const data=new FormData(event.target); performAction(() => action(data)); } });
+    modal.addEventListener("submit", (event) => { event.preventDefault(); if (modalSubmit) { const action=modalSubmit; const data=new FormData(event.target); if(!isMockMode&&modalPlanning)submitPlanning(action,data);else performAction(() => action(data)); } });
+    modal.addEventListener('click',event=>{if(event.target.closest('[data-plan-refresh]'))refreshPlanning();});
     modal.addEventListener("input", (event) => { if (event.target.id !== "jobsTeamSearch") return; const query = event.target.value.trim().toLowerCase(); modal.querySelectorAll("[data-team-option]").forEach((option) => { option.hidden = !!query && !option.dataset.teamOption.includes(query); }); });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -989,6 +1331,20 @@
   function handleRootClick(event) {
     const button = event.target.closest("[data-action]"); if (!button) return;
     const action = button.dataset.action;
+    if (!isMockMode) {
+      if(button.disabled)return;
+      if(action.startsWith('review-'))return openReview(action.slice(7));
+      if(action==='execute-start')return openExecution('start');
+      if(action==='execute-finish')return openExecution('finish');
+      if(action==='execute-recover')return openExecution('recover',button.dataset.session);
+      if(action==='plan-create')return openPlanning('create');
+      if(action==='plan-team')return openPlanning('team');
+      if(action==='plan-schedule')return openPlanning('schedule');
+      if(action==='live-retry')return loadLiveList();
+      if(action==='live-prev')return loadLiveList(livePage.offset-livePage.limit);
+      if(action==='live-next')return loadLiveList(livePage.offset+livePage.limit);
+      if(!['close','billing','clocking','dashboard','open','tab','print'].includes(action)){toast('Jobs is read-only in this checkpoint.');return;}
+    }
     if (action === "close") return closeJobs();
     if (action === "billing") return openBillingModule();
     if (action === "clocking") return openClockingModule();

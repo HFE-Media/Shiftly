@@ -123,6 +123,15 @@ let currentCompanyId = "";
 let currentCompanyName = "";
 let currentCompanyRole = "";
 let currentCompanyEmployeeId = "";
+let jobsContextVersion = 0;
+// Read-only Jobs bridge: reuse the existing session/company store, never a client.
+window.ShiftlyJobsContext = Object.freeze({ get() {
+  const company = currentCompany();
+  return { userId: currentUser?.id || "", companyId: currentCompanyId,
+    role: currentCompanyRole, employeeId: currentCompanyEmployeeId,
+    company: company ? { ...company } : null,
+    jobsEnabled: company?.jobs_enabled === true, version: jobsContextVersion };
+} });
 let employeeDashboardReturn = "clocking";
 let platformCompanies = [];
 let selectedPlatformCompanyId = "";
@@ -734,6 +743,7 @@ function showSignedOut() {
   currentCompanyName = "";
   currentCompanyRole = "";
   currentCompanyEmployeeId = "";
+  jobsContextVersion++;
   window.dispatchEvent(new Event("shiftly:company-context"));
   selectedSiteId = "";
   sites = [];
@@ -1238,6 +1248,10 @@ async function checkPlatformAdmin() {
 }
 
 async function loadCompanyAccess() {
+  // Clear only Jobs entitlement while access refreshes, including failed refreshes.
+  companies.forEach(company => { company.jobs_enabled = false; });
+  jobsContextVersion++;
+  window.dispatchEvent(new Event("shiftly:company-context"));
   if (!currentUser) throw new Error("Sign in required.");
 
   let { data: memberships, error: membershipError } = await sb
@@ -1265,10 +1279,21 @@ async function loadCompanyAccess() {
 
   let { data: companyRows, error: companyError } = await sb
     .from(COMPANIES_TABLE)
-    .select("id,name,plan,status,logo_url,billing_enabled")
+    .select("id,name,plan,status,logo_url,billing_enabled,jobs_enabled")
     .in("id", ids)
     .eq("status", "active")
     .order("name", { ascending: true });
+
+  if (companyError && /jobs_enabled/i.test(companyError.message || "")) {
+    const retry = await sb
+      .from(COMPANIES_TABLE)
+      .select("id,name,plan,status,logo_url,billing_enabled")
+      .in("id", ids)
+      .eq("status", "active")
+      .order("name", { ascending: true });
+    companyRows = retry.data;
+    companyError = retry.error;
+  }
 
   if (companyError && /(logo_url|billing_enabled)/i.test(companyError.message || "")) {
     const retry = await sb
@@ -1296,6 +1321,7 @@ async function loadCompanyAccess() {
     role: membershipByCompany.get(String(c.id))?.[COMPANY_USERS_ROLE_COL] || "supervisor",
     employee_id: membershipByCompany.get(String(c.id))?.employee_id || "",
     billing_enabled: c.billing_enabled === true,
+    jobs_enabled: c.jobs_enabled === true,
     billing_access: membershipByCompany.get(String(c.id))?.billing_access === true
   }));
 
@@ -1305,6 +1331,7 @@ async function loadCompanyAccess() {
   currentCompanyName = companies.find(c => c.id === currentCompanyId)?.name || "";
   currentCompanyRole = companies.find(c => c.id === currentCompanyId)?.role || "";
   currentCompanyEmployeeId = companies.find(c => c.id === currentCompanyId)?.employee_id || "";
+  jobsContextVersion++;
   window.dispatchEvent(new Event("shiftly:company-context"));
   populateCompanySelect();
 }
@@ -1348,6 +1375,7 @@ function setCurrentCompany(company) {
   currentCompanyName = company.name || "";
   currentCompanyRole = company.role || "";
   currentCompanyEmployeeId = company.employee_id || "";
+  jobsContextVersion++;
   window.dispatchEvent(new Event("shiftly:company-context"));
   selectedSiteId = "";
   queue.clear();
