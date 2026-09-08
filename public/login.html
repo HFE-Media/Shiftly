@@ -2853,6 +2853,13 @@ select{
               <div class="stat"><b id="statEvents">0</b><span>Clock Events</span></div>
             </div>
           </div>
+          <div class="panelBody" id="platformJobsAccessPanel" hidden>
+            <label class="statutoryToggle" for="platformJobsAccess">
+              <span><b>JOBS ACCESS</b><span>Enable Jobs for this company</span></span>
+              <input id="platformJobsAccess" type="checkbox" disabled aria-describedby="platformJobsAccessStatus"/>
+            </label>
+            <div id="platformJobsAccessStatus" class="mutedText" role="status" aria-live="polite"></div>
+          </div>
           <div class="panelBody" style="border-top:1px solid rgba(212,175,55,0.10);">
             <div class="inlineHead">
               <div class="sectionLabel" style="margin:0;">Company Users</div>

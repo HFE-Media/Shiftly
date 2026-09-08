@@ -135,6 +135,7 @@ window.ShiftlyJobsContext = Object.freeze({ get() {
 let employeeDashboardReturn = "clocking";
 let platformCompanies = [];
 let selectedPlatformCompanyId = "";
+let platformJobsAccessSaving = false;
 let companyAdminEmployees = [];
 let companyAdminSites = [];
 let companyAdminSupervisors = [];
@@ -646,6 +647,9 @@ const el = {
   platformDetailTitle: $("platformDetailTitle"),
   platformDetailSub: $("platformDetailSub"),
   platformDetailStatus: $("platformDetailStatus"),
+  platformJobsAccessPanel: $("platformJobsAccessPanel"),
+  platformJobsAccess: $("platformJobsAccess"),
+  platformJobsAccessStatus: $("platformJobsAccessStatus"),
   statUsers: $("statUsers"),
   statEmployees: $("statEmployees"),
   statSites: $("statSites"),
@@ -4651,13 +4655,13 @@ async function loadPlatformCompanies() {
 
   let { data, error } = await sb
     .from(COMPANIES_TABLE)
-    .select("id,name,slug,plan,status,created_at,logo_url")
+    .select("id,name,slug,plan,status,created_at,logo_url,jobs_enabled")
     .order("created_at", { ascending: false });
 
   if (error && /logo_url/i.test(error.message || "")) {
     const retry = await sb
       .from(COMPANIES_TABLE)
-      .select("id,name,slug,plan,status,created_at")
+      .select("id,name,slug,plan,status,created_at,jobs_enabled")
       .order("created_at", { ascending: false });
     data = retry.data;
     error = retry.error;
@@ -4678,6 +4682,7 @@ async function loadPlatformCompanies() {
   }
 
   renderPlatformCompanies();
+  renderPlatformJobsAccess();
   if (selectedPlatformCompanyId) await loadPlatformCompanyDetail(selectedPlatformCompanyId);
   else {
     el.platformDetailTitle.textContent = "Select a company";
@@ -4692,7 +4697,48 @@ async function loadPlatformCompanies() {
 async function selectPlatformCompany(companyId) {
   selectedPlatformCompanyId = companyId;
   renderPlatformCompanies();
+  renderPlatformJobsAccess();
   await loadPlatformCompanyDetail(companyId);
+}
+
+function renderPlatformJobsAccess(message = "") {
+  const company = platformCompanies.find(c => c.id === selectedPlatformCompanyId);
+  const allowed = isPlatformAdmin && !!currentUser && !!company;
+  el.platformJobsAccessPanel.hidden = !allowed;
+  el.platformJobsAccess.checked = allowed && company.jobs_enabled === true;
+  el.platformJobsAccess.disabled = !allowed || platformJobsAccessSaving || typeof company.jobs_enabled !== "boolean";
+  el.platformJobsAccessStatus.textContent = message || (allowed && typeof company.jobs_enabled !== "boolean" ? "Jobs access unavailable. Reload company data." : "");
+}
+
+async function updatePlatformJobsAccess() {
+  const company = platformCompanies.find(c => c.id === selectedPlatformCompanyId);
+  if (!isPlatformAdmin || !currentUser || !company || platformJobsAccessSaving || typeof company.jobs_enabled !== "boolean") {
+    renderPlatformJobsAccess();
+    return;
+  }
+  const userId = currentUser.id;
+  const enabled = el.platformJobsAccess.checked;
+  if (enabled === company.jobs_enabled) return;
+  platformJobsAccessSaving = true;
+  renderPlatformJobsAccess("Saving Jobs access…");
+  let message;
+  try {
+    // Existing authenticated client only. RLS and the entitlement trigger remain authoritative.
+    const { data, error } = await sb.from(COMPANIES_TABLE)
+      .update({ jobs_enabled: enabled })
+      .eq("id", company.id)
+      .eq("jobs_enabled", company.jobs_enabled)
+      .select("id,jobs_enabled").single();
+    if (error) throw error;
+    if (data?.id !== company.id || data.jobs_enabled !== enabled) throw new Error("Jobs access was not confirmed. Reload company data.");
+    if (currentUser?.id === userId && isPlatformAdmin) company.jobs_enabled = data.jobs_enabled;
+    message = "Jobs access " + (enabled ? "enabled." : "disabled.");
+  } catch (error) {
+    message = "Could not save Jobs access: " + (error.message || "Unknown error") + " Reload company data before retrying.";
+  } finally {
+    platformJobsAccessSaving = false;
+    renderPlatformJobsAccess(currentUser?.id === userId && selectedPlatformCompanyId === company.id ? message : "");
+  }
 }
 
 async function loadPlatformCompanyDetail(companyId) {
@@ -8712,6 +8758,7 @@ el.btnResetPassword.addEventListener("click", sendPasswordReset);
 
 el.btnLogout.addEventListener("click", signOut);
 el.btnPlatformLogout.addEventListener("click", signOut);
+el.platformJobsAccess.addEventListener("change", updatePlatformJobsAccess);
 el.btnPortfolioLogout.addEventListener("click", signOut);
 el.btnCompanyAdminLogout.addEventListener("click", signOut);
 el.btnBillingLogout.addEventListener("click", signOut);
