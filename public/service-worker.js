@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v217"; // Jobs static assets; existing shell caching unchanged
+const CACHE_NAME = "shiftly-v218"; // Jobs static assets; existing shell caching unchanged
 
 const ASSETS = [
   "/",
@@ -14,9 +14,9 @@ const ASSETS = [
   "/login.html",
   "/config.js",
   "/app.js",
-  "/jobs.js?v=11",
+  "/jobs.js?v=12",
   "/jobs.css?v=11",
-  "/jobs-data.js?v=1",
+  "/jobs-data.js?v=2",
   "/manifest.json",
   "/icons/shiftly-favicon-32.png",
   "/icons/shiftly-favicon-192.png",
