@@ -472,8 +472,9 @@
   function hostNavigation() {
     const source=hostNavigationSource();
     if(!source)return ''; // Never invent access when the authenticated host is absent.
-    const back=role==='admin'?'<button class="miniIconBtn" type="button" data-action="close" title="Company Dashboard" aria-label="Company Dashboard"><i class="ph ph-squares-four"></i></button>':'';
-    return back+[...source.querySelectorAll('button[id]')].filter(button=>!button.hidden&&button.style.display!=='none').map(button=>{
+    const back=role==='admin'?'<button class="miniIconBtn" type="button" data-action="close" title="Company Dashboard" aria-label="Company Dashboard"><i class="ph ph-squares-four"></i></button>':'<button class="miniIconBtn" type="button" data-action="close" title="Open scanner" aria-label="Open scanner"><i class="ph ph-fingerprint"></i></button>';
+    const excluded=new Set(['btnOpenJobsAdmin','btnOpenJobsSupervisor','btnCompanyAdminPortfolio','btnCompanyAdminSwitch','btnBackToPortfolio']);
+    return back+[...source.querySelectorAll('button[id]')].filter(button=>!excluded.has(button.id)&&!button.hidden&&button.style.display!=='none').map(button=>{
       const active=button.id===(role==='admin'?'btnOpenJobsAdmin':'btnOpenJobsSupervisor');
       return `<button type="button" class="${h(button.className)}${active?' active jobsNavActive':''}" data-action="host-nav" data-host-id="${h(button.id)}" title="${h(button.title)}" aria-label="${h(button.getAttribute('aria-label')||button.title)}" ${active?'aria-current="page"':''} ${button.disabled?'disabled':''}>${button.innerHTML}</button>`;
     }).join('');
@@ -506,7 +507,6 @@
     }
     if(liveStatus==='ready'||liveStatus==='empty') {
       if(role==='supervisor')renderSupervisorDashboard();else renderAdminDashboard();
-      (root.querySelector('.jobsCompanyActions')||root.querySelector('.jobsSupervisorCounts')).insertAdjacentHTML('beforeend','<button class="miniIconBtn" type="button" data-action="live-retry" title="Refresh Jobs" aria-label="Refresh Jobs"><i class="ph ph-arrow-clockwise"></i></button>');
       return;
     }
     const loading=liveStatus==='loading-list'||liveStatus==='loading-detail';

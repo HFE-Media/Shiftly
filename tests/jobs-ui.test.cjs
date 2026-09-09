@@ -259,10 +259,12 @@ test('live Jobs mirrors role-specific host navigation, active Jobs, logout and B
     await h.window.ShiftlyJobs.openAdmin();
     const nav=()=>h.document.querySelector('.jobsGlobalActions');
     assert.ok(nav().querySelector(`[data-host-id="${logout.id}"]`));
-    assert.ok(nav().querySelector(`[data-host-id="${switchButton.id}"]`));
+    assert.equal(nav().querySelector(`[data-host-id="${switchButton.id}"]`),null);
     assert.equal(nav().querySelector('[data-host-id="btnOpenBilling"]'),null);
-    assert.ok(nav().querySelector('[aria-current="page"].jobsNavActive'));
-    assert.equal(!!nav().querySelector('[data-action="close"]'),admin);
+    assert.equal(nav().querySelector('[aria-current="page"].jobsNavActive'),null);
+    assert.ok(nav().querySelector('[data-action="close"]'));
+    assert.equal(nav().querySelector('[data-action="close"]').getAttribute('aria-label'),admin?'Company Dashboard':'Open scanner');
+    assert.equal(h.document.querySelector('[aria-label="Refresh Jobs"]'),null);
     if(admin){
       const billing=h.document.getElementById('btnOpenBilling');let opened=0;billing.addEventListener('click',()=>opened++);
       billing.hidden=false;await tick();assert.ok(nav().querySelector('[data-host-id="btnOpenBilling"]'));
@@ -277,9 +279,9 @@ test('live Jobs mirrors role-specific host navigation, active Jobs, logout and B
 
 test('host company-navigation handlers are reused and clear the Jobs workspace before running',async()=>{
   const h=await harness('admin','preview.invalid',liveCtx,transport(storedResponse));
-  const button=h.document.getElementById('btnCompanyAdminPortfolio');button.hidden=false;let calls=0;
+  const button=h.document.getElementById('btnOpenClocking');button.hidden=false;let calls=0;
   button.addEventListener('click',()=>{calls++;assert.equal(h.document.querySelector('#jobsShell').hidden,true);assert.equal(h.window.__jobsTest.state().jobs.length,0);});
-  await h.window.ShiftlyJobs.openAdmin();await h.click('.jobsGlobalActions [data-host-id="btnCompanyAdminPortfolio"]');assert.equal(calls,1);
+  await h.window.ShiftlyJobs.openAdmin();await h.click('.jobsGlobalActions [data-host-id="btnOpenClocking"]');assert.equal(calls,1);
 });
 
 test('live Admin reuses approved dashboard, All Jobs and sectioned Create form',async()=>{
@@ -332,9 +334,9 @@ test('live dashboard loading, empty and explicit retry never use fixtures',async
   const h=await harness('admin','preview.invalid',liveCtx,client);
   const opening=h.window.ShiftlyJobs.openAdmin();await tick();assert.match(h.document.body.textContent,/Loading Jobs/);
   resolve({data:Array.from({length:25},(_,i)=>({...liveRow,id:'j'+i}))});await opening;
-  mode='empty';await h.click('[data-action="live-retry"]');
+  mode='empty';await h.window.ShiftlyJobs.openAdmin();
   assert.match(h.document.body.textContent,/No active jobs/i);
-  mode='error';await h.click('[data-action="live-retry"]');
+  mode='error';await h.window.ShiftlyJobs.openAdmin();
   assert.match(h.document.body.textContent,/Retry list/);assert.doesNotMatch(h.document.body.textContent,/Thabo|Highveld/);
   const count=client.requests.length;await tick();assert.equal(client.requests.length,count);
   mode='empty';await h.click('[data-action="live-retry"]');assert.equal(client.requests.length,count+3);

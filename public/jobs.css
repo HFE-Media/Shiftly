@@ -812,6 +812,10 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 .jobsCreateSections h3 { margin: 0 0 10px; color: #d7c174; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
 .jobsCreateSections > section:nth-child(3), .jobsCreateSections > section:nth-child(4) { grid-column: 1 / -1; }
 .jobsFormGridThree { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.jobsCreateSections .jobsFormGridThree > .jobsLabel { min-width: 0; }
+.jobsCreateSections .jobsFormGridThree > .jobsLabel:not(.wide) { grid-template-rows: minmax(28px, auto) 44px; align-content: start; }
+.jobsCreateSections .jobsFormGridThree .jobsInput { min-width: 0; width: 100%; box-sizing: border-box; }
+.jobsCreateSections .jobsFormGridThree > .jobsLabel:not(.wide) .jobsInput { height: 44px; min-height: 44px; padding-inline: 10px; }
 .jobsTeamPicker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; max-height: 150px; margin-top: 9px; overflow: auto; }
 .jobsTeamPicker .jobsCheck { min-height: 46px; padding: 8px; }
 .jobsTeamPicker .jobsCheck span { display: grid; gap: 2px; }
