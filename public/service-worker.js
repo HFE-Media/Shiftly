@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v218"; // Jobs static assets; existing shell caching unchanged
+const CACHE_NAME = "shiftly-v219"; // Refresh Platform Jobs Access loader; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -14,6 +14,7 @@ const ASSETS = [
   "/login.html",
   "/config.js",
   "/app.js",
+  "/app.js?v=196",
   "/jobs.js?v=12",
   "/jobs.css?v=11",
   "/jobs-data.js?v=2",

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/login.html', 'utf8');
+const sw = fs.readFileSync('public/service-worker.js', 'utf8');
 const code = app.slice(app.indexOf('function renderPlatformJobsAccess('), app.indexOf('async function loadPlatformCompanyDetail('));
 function harness({ admin = true, user = { id: 'admin' }, flag = false, result } = {}) {
   const calls = [];
@@ -78,4 +79,41 @@ test('disable action changes only Jobs entitlement; no-op does not write', async
   c.el.platformJobsAccess.checked = false; await c.updatePlatformJobsAccess();
   assert.equal(c.platformCompanies[0].jobs_enabled, false);
   assert.equal(c.platformCompanies[0].billing_enabled, true);
+});
+
+test('release changes app cache key and precaches the exact HTML script URL', () => {
+  const src = html.match(/<script defer src="\.\/(app\.js\?v=\d+)"/)[1];
+  assert.equal(src, 'app.js?v=196');
+  assert.ok(sw.includes('"/' + src + '"'));
+  assert.match(sw, /CACHE_NAME = "shiftly-v219"/);
+  assert.match(sw, /url\.pathname === "\/app\.js"/); // Keep network-first operational code.
+});
+
+test('full company load reveals saved OFF, selection refreshes ON, non-admin hides', async () => {
+  const { c } = harness();
+  c.platformCompanies = []; c.selectedPlatformCompanyId = '';
+  c.el.platformJobsAccessPanel.hidden = true; c.el.platformJobsAccess.disabled = true;
+  c.renderPlatformCompanies = () => {};
+  c.loadPlatformCompanyDetail = async () => {};
+  c.alert = message => assert.fail(message); c.console = console;
+  const selects = [];
+  const rows = [{ id: 'one', jobs_enabled: false }, { id: 'two', jobs_enabled: true }];
+  c.sb = { from(table) {
+    assert.equal(table, 'companies');
+    return { select(fields) { selects.push(fields); return this; },
+      async order() { return { data: rows }; } };
+  } };
+  vm.runInContext(app.slice(app.indexOf('async function loadPlatformCompanies('), app.indexOf('function renderPlatformJobsAccess(')), c);
+  await c.loadPlatformCompanies();
+  assert.ok(selects[0].includes('jobs_enabled'));
+  assert.equal(c.el.platformJobsAccessPanel.hidden, false);
+  assert.equal(c.el.platformJobsAccess.disabled, false);
+  assert.equal(c.el.platformJobsAccess.checked, false);
+  await c.selectPlatformCompany('two');
+  assert.equal(c.el.platformJobsAccess.checked, true);
+  await c.selectPlatformCompany('one');
+  assert.equal(c.el.platformJobsAccess.checked, false);
+  c.isPlatformAdmin = false; c.renderPlatformJobsAccess();
+  assert.equal(c.el.platformJobsAccessPanel.hidden, true);
+  assert.equal(c.el.platformJobsAccess.disabled, true);
 });
