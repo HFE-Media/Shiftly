@@ -85,8 +85,8 @@ test('release changes app cache key and precaches the exact HTML script URL', ()
   const src = html.match(/<script defer src="\.\/(app\.js\?v=\d+)"/)[1];
   assert.equal(src, 'app.js?v=196');
   assert.ok(sw.includes('"/' + src + '"'));
-  assert.match(sw, /CACHE_NAME = "shiftly-v222"/);
-  for(const asset of ['jobs.js?v=15','jobs-data.js?v=4','jobs.css?v=13']) {
+  assert.match(sw, /CACHE_NAME = "shiftly-v223"/);
+  for(const asset of ['jobs.js?v=16','jobs-data.js?v=4','jobs.css?v=14']) {
     assert.ok(sw.includes(asset));
     assert.ok(fs.readFileSync('public/login.html','utf8').includes(asset));
   }

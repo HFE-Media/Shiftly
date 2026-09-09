@@ -946,6 +946,13 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 .jobsEvidenceDisclosure { margin-top: 14px; border-top: 1px solid var(--jobs-line); }
 .jobsEvidenceDisclosure > summary { min-height: 44px; padding: 12px 0; cursor: pointer; font-size: 12px; font-weight: 700; }
 .jobsEvidenceDisclosure > summary span { color: var(--jobs-muted); font-weight: 400; margin-left: 8px; }
+.jobsLifecycleStrip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 8px 10px; margin-bottom: 8px; border-radius: 6px; background: transparent; }
+.jobsLifecycleStrip > b { font-size: 11px; }
+.jobsLifecycleStrip > p { flex-basis: 100%; margin: 0; line-height: 1.35; }
+.jobsLifecycleStrip > .jobsActionButtons:empty { display: none; }
+.jobsLifecycleStrip > .jobsEvidenceDisclosure { margin: 0 0 0 auto; border-top: 0; }
+.jobsLifecycleStrip > .jobsEvidenceDisclosure > summary { min-height: 0; padding: 4px 0; font-size: 11px; }
+.jobsLifecycleStrip > .jobsEvidenceDisclosure[open] { flex-basis: 100%; margin-left: 0; }
 .jobsEvidenceBody { padding-top: 8px; }
 .jobsReviewDecision .jobsActionBar { margin: 16px 0 0; padding: 12px; flex-direction: column; align-items: stretch; }
 .jobsReviewDecision .jobsActionButtons { display: grid; }
