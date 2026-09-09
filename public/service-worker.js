@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v219"; // Refresh Platform Jobs Access loader; caching strategy unchanged
+const CACHE_NAME = "shiftly-v220"; // Coordinated Jobs UI parity assets; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -15,9 +15,9 @@ const ASSETS = [
   "/config.js",
   "/app.js",
   "/app.js?v=196",
-  "/jobs.js?v=12",
-  "/jobs.css?v=11",
-  "/jobs-data.js?v=2",
+  "/jobs.js?v=13",
+  "/jobs.css?v=12",
+  "/jobs-data.js?v=3",
   "/manifest.json",
   "/icons/shiftly-favicon-32.png",
   "/icons/shiftly-favicon-192.png",
