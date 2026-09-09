@@ -946,6 +946,7 @@
     modalPlanning=planning;
     modalSubmit = onSubmit;
     modal.innerHTML = `<div class="jobsModalCard ${title === "Create Job" ? "jobsCreateModal" : ""}" role="dialog" aria-modal="true" aria-labelledby="jobsModalTitle"><form id="jobsModalForm"><div class="jobsModalHead"><div><h2 id="jobsModalTitle">${h(title)}</h2>${copy ? `<p>${h(copy)}</p>` : ""}</div><button class="jobsIconBtn" type="button" data-modal-close aria-label="Close"><i class="ph ph-x"></i></button></div><div class="jobsModalBody">${body}</div><div class="jobsModalActions"><button class="platformBtn inline jobsBtn secondary" type="button" data-modal-close>Cancel</button><button class="platformBtn inline jobsBtn ${tone}" type="submit">${h(submitLabel)}</button></div></form></div>`;
+    syncCreateLead();
     modal.hidden = false; modal.setAttribute("aria-hidden", "false");
     if (workspace) workspace.inert = true;
     setTimeout(() => modal.querySelector("input,textarea,select,button")?.focus(), 0);
@@ -970,12 +971,24 @@
     }});
   }
 
+  function syncCreateLead() {
+    const select=modal.querySelector('.jobsCreateSections [name="lead"]');
+    if(!select)return;
+    modal.querySelectorAll('.jobsTeamPicker input[name="team"]').forEach(box=>{
+      const card=box.closest('label'),subtitle=card.querySelector('small');
+      if(!subtitle.dataset.original)subtitle.dataset.original=subtitle.textContent;
+      const isLead=!!select.value&&box.value===select.value;
+      if(isLead)box.checked=true;
+      subtitle.textContent=isLead?`Lead Technician · ${box.value}`:subtitle.dataset.original;
+    });
+  }
+
   function createJobFields(directories) {
     return `<div class="jobsCreateSections">
       <section><h3>Job</h3><div class="jobsFormGrid jobsFormGridThree">${label("title", "Job Title", input("text", "e.g. DB board repair", true), true)}${label("priority", "Priority", `<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select>`)}${label("scheduled", "Scheduled Date", input("date"))}${label("scheduledTime", "Scheduled Time (optional)", input("time"))}<label class="jobsCheck jobsCreateSchedule"><input type="checkbox" name="scheduleIntent" value="yes"/><span>Schedule this Job</span></label>${label("site", "Shiftly Site (optional)", `<select class="jobsInput" name="NAME"><option value="">No linked site</option>${directories.sites.map(site=>`<option value="${h(site.siteId)}">${h(site.name)}</option>`).join("")}</select>`, true)}</div></section>
       <section><h3>Client</h3><div class="jobsFormGrid">${label("clientName", "Client Name", input("text", "e.g. Demo Engineering", true))}${label("contactName", "Contact Name", input("text", "Contact person"))}${label("phone", "Phone", input("tel", "+27"))}${label("email", "Email", input("email", "name@example.test"))}${label("address", "Service Address", input("text", "Street / area / province", true), true)}</div></section>
       <section><h3>Work Required</h3>${label("description", "Client Request / Job Description", `<textarea class="jobsInput" name="NAME" placeholder="What must the field team do?" required></textarea>`, true)}</section>
-      <section><h3>Assign Team</h3><div class="jobsFormGrid">${label("lead", "Lead Supervisor", `<select class="jobsInput" name="NAME">${!isMockMode ? '<option value="">Select eligible lead</option>' : ''}${directories.leads.map(person=>`<option value="${h(person.employeeId)}">${h(person.name)}</option>`).join("")}</select>`)}<label class="jobsLabel">Find Team Members<input id="jobsTeamSearch" class="jobsInput" type="search" placeholder="Search employees"/></label></div><div class="jobsTeamPicker">${directories.team.map((person) => `<label class="jobsCheck" data-team-option="${h(`${person.name} ${person.role}`.toLowerCase())}"><input type="checkbox" name="team" value="${person.employeeId}"/><span><b>${h(person.name)}</b><small>${h(person.role)} · ${h(person.employeeId)}</small></span></label>`).join("")}</div></section>
+      <section><h3>Assign Team</h3><div class="jobsFormGrid">${label("lead", "Lead Supervisor", `<select class="jobsInput" name="NAME">${!isMockMode ? '<option value="">Select eligible lead</option>' : ''}${directories.leads.map(person=>`<option value="${h(person.employeeId)}">${h(person.supervisorId ? `${person.supervisorId} · ${person.name}` : person.name)}</option>`).join("")}</select>`)}<label class="jobsLabel">Find Team Members<input id="jobsTeamSearch" class="jobsInput" type="search" placeholder="Search employees"/></label></div><div class="jobsTeamPicker">${directories.team.map((person) => `<label class="jobsCheck" data-team-option="${h(`${person.name} ${person.role}`.toLowerCase())}"><input type="checkbox" name="team" value="${person.employeeId}"/><span><b>${h(person.name)}</b><small>${h(person.role)} · ${h(person.employeeId)}</small></span></label>`).join("")}</div></section>
     </div>`;
   }
 
@@ -1368,6 +1381,7 @@
     modal.addEventListener("click", (event) => { if (event.target === modal || event.target.closest("[data-modal-close]")) closeModal(); });
     modal.addEventListener("submit", (event) => { event.preventDefault(); if (modalSubmit) { const action=modalSubmit; const data=new FormData(event.target); if(!isMockMode&&modalPlanning)submitPlanning(action,data);else performAction(() => action(data)); } });
     modal.addEventListener('click',event=>{if(event.target.closest('[data-plan-refresh]'))refreshPlanning();});
+    modal.addEventListener('change',event=>{if(['lead','team'].includes(event.target.name))syncCreateLead();});
     modal.addEventListener("input", (event) => { if (event.target.id !== "jobsTeamSearch") return; const query = event.target.value.trim().toLowerCase(); modal.querySelectorAll("[data-team-option]").forEach((option) => { option.hidden = !!query && !option.dataset.teamOption.includes(query); }); });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {

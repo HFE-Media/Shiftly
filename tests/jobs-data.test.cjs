@@ -8,6 +8,25 @@ vm.runInNewContext(fs.readFileSync('public/jobs-data.js','utf8'),sandbox);
 const API = sandbox.window.ShiftlyJobsData;
 const person={employeeId:'E100',name:'Demo Supervisor',role:'supervisor'};
 const ctx=role=>({companyId:'demo',userId:role,role,jobsEnabled:true,employeeId:'E100'});
+test('lead directory uses only scoped read RPC, paginates and rejects stale context',async()=>{
+  let c=ctx('admin');const calls=[];
+  const client={from(name){assert.ok(['sites','employees'].includes(name));const q={select(){return q;},eq(){return q;},order(){return q;},range(){return Promise.resolve({data:name==='employees'?[{employee_id:'E100',full_name:'Employee 1',active:true}]:[]});}};return q;},rpc:async(name,args)=>{calls.push({name,args});return {data:args.p_offset===0?Array.from({length:250},()=>({employee_id:'E100',supervisor_id:'SUP01'})):[]};}};
+  const api=API.createSupabase({client,getContext:()=>c,planning:true,readOnly:true});
+  const dirs=await api.directories();assert.equal(dirs.leads[0].supervisorId,'SUP01');
+  assert.deepEqual(calls.map(x=>x.args.p_offset),[0,250]);assert.ok(calls.every(x=>x.name==='jobs_lead_directory'&&x.args.p_company_id==='demo'));
+  client.rpc=async()=>{c={...c,companyId:'another'};return {data:[]};};
+  await assert.rejects(api.directories());
+});
+
+test('additive lead directory SQL preserves existing security and exposes minimal fields',()=>{
+  const sql=fs.readFileSync('supabase/migrations/20260909190000_jobs_lead_directory.sql','utf8');
+  assert.match(sql,/can_manage_company_jobs\(p_company_id\)/);
+  assert.match(sql,/security definer set search_path=pg_catalog,public/);
+  assert.match(sql,/u.employee_id=e.employee_id and u.active and u.role='supervisor'/);
+  assert.match(sql,/from public, anon/);
+  assert.doesNotMatch(sql,/create policy|alter table|update public|insert into|delete from|create or replace/i);
+  assert.match(sql,/returns table\(employee_id text, full_name text, supervisor_id text\)/);
+});
 test('dashboard reads all scoped pages and joins only matching assignments and sessions',async()=>{
   let c=ctx('admin');const requests=[];
   const jobs=Array.from({length:251},(_,i)=>({id:'j'+i,company_id:'demo',lifecycle_status:'scheduled'}));

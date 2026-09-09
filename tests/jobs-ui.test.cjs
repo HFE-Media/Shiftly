@@ -30,6 +30,7 @@ function planningTransport() {
   });
   client.calls=calls;
   client.rpc=async(name,args)=>{
+    if(name==='jobs_lead_directory'){assert.equal(args.p_company_id,'company-a');return {data:[{employee_id:'LEAD',full_name:'Lead Person',supervisor_id:'SUP01'}]};}
     assert.ok(['create_job_with_team','assign_job_employee','replace_job_lead','unassign_job_employee','schedule_job'].includes(name),name);
     calls.push({name,args});revision++;
     if(name==='create_job_with_team'){job={...job,...args.p_data,id:'created-real',job_number:'BACKEND-900',lifecycle_status:args.p_schedule?'scheduled':'draft'};return {data:{...job,revision}};}
@@ -394,7 +395,14 @@ test('planning directories are minimal, company scoped, active, and isolate elig
   await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="plan-create"]');
   const dirs=h.window.__jobsTest.directories();assert.equal(dirs.team.length,2);assert.deepEqual(Array.from(dirs.leads,e=>e.employeeId),['LEAD']);
   for(const r of client.requests.filter(r=>['sites','employees','company_users'].includes(r.table))){assert.equal(r.filters.company_id,'company-a');assert.equal(r.filters.active,true);assert.doesNotMatch(r.fields,/salary|rate|email|pay|attendance|id_number/);}
-  assert.equal(client.requests.find(r=>r.table==='company_users').filters.role,'supervisor');
+  assert.equal(client.requests.some(r=>r.table==='company_users'),false);
+  assert.match(h.document.querySelector('[name="lead"]').textContent,/SUP01 · Lead Person/);
+  const select=h.document.querySelector('[name="lead"]');select.querySelector('[value="LEAD"]').selected=true;
+  select.dispatchEvent(new h.window.Event('change',{bubbles:true}));
+  const leadBox=h.document.querySelector('[name="team"][value="LEAD"]');
+  assert.equal(leadBox.checked,true);
+  assert.match(leadBox.closest('label').textContent,/Lead Technician · LEAD/);
+  assert.match(h.document.querySelector('[name="team"][value="MEMBER"]').closest('label').textContent,/Assigned Technician · MEMBER/);
   assert.match(h.document.querySelector('#jobsModal').textContent,/Team Person/);assert.doesNotMatch(h.document.querySelector('#jobsModal').textContent,/Thabo|E100/);
   const valid={title:'T',clientName:'C',siteId:'SITE-REAL',leadId:'LEAD',teamIds:['MEMBER'],scheduleRequested:false,scheduledDate:'2026-09-10'};
   assert.deepEqual(Array.from(h.window.__jobsTest.validate(valid,dirs).teamIds),['LEAD','MEMBER']);
@@ -416,7 +424,7 @@ test('duplicate Create submits are blocked and late create/directory responses d
   for(const directory of [true,false]){
     const client=planningTransport();let resolve;let count=0;
     if(directory){const from=client.from;client.from=table=>{const q=from(table);if(table==='employees')q.then=(yes,no)=>new Promise(done=>resolve=done).then(yes,no);return q;};}
-    else client.rpc=()=>{count++;return new Promise(done=>resolve=done);};
+    else {const readRpc=client.rpc;client.rpc=(name,args)=>{if(name==='jobs_lead_directory')return readRpc(name,args);count++;return new Promise(done=>resolve=done);};}
     const h=await harness('admin','preview.invalid',liveCtx,client);await h.window.ShiftlyJobs.openAdmin();
     await h.click('[data-action="plan-create"]');
     if(!directory){await h.submit({title:'New',clientName:'C',lead:'LEAD'});await h.submit({});assert.equal(count,1);assert.equal(h.document.querySelector('#jobsModal button[type="submit"]').disabled,true);}
@@ -426,7 +434,7 @@ test('duplicate Create submits are blocked and late create/directory responses d
 });
 
 test('unknown create outcome requires explicit refresh and never retries itself',async()=>{
-  const client=planningTransport();let count=0;client.rpc=async()=>{count++;return {error:{code:'NETWORK',message:'lost response'}};};
+  const client=planningTransport();let count=0;const readRpc=client.rpc;client.rpc=async(name,args)=>{if(name==='jobs_lead_directory')return readRpc(name,args);count++;return {error:{code:'NETWORK',message:'lost response'}};};
   const h=await harness('admin','preview.invalid',liveCtx,client);await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="plan-create"]');
   await h.submit({title:'New',clientName:'C',lead:'LEAD'});assert.equal(count,1);assert.match(h.document.querySelector('#jobsModal').textContent,/Outcome could not be confirmed/);
   assert.equal(h.document.querySelector('#jobsModal button[type="submit"]').disabled,true);await h.submit({});assert.equal(count,1);
@@ -449,7 +457,7 @@ test('team and schedule operations use fetched revision and authoritative refres
 test('planning stale revision/conflict refresh, access denial cleanup and validation preserve input',async()=>{
   for(const code of ['40001','23505','42501','P0001']){
     const client=planningTransport();let calls=0;
-    client.rpc=async()=>{calls++;return {error:{code,message:'Backend validation'}};};
+    const readRpc=client.rpc;client.rpc=async(name,args)=>{if(name==='jobs_lead_directory')return readRpc(name,args);calls++;return {error:{code,message:'Backend validation'}};};
     const h=await harness('admin','preview.invalid',liveCtx,client);await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="open"]');await h.click('[data-action="plan-schedule"]');
     const before=client.requests.length;
     await h.submit({startDate:'2026-09-12',startTime:'09:00'});assert.equal(calls,1);
@@ -462,7 +470,7 @@ test('planning stale revision/conflict refresh, access denial cleanup and valida
 
 test('confirmed create with refresh failure cannot send a second create',async()=>{
   const client=planningTransport();const rpc=client.rpc,from=client.from;let saved=false,failReads=true;
-  client.rpc=async(...args)=>{const response=await rpc(...args);saved=true;return response;};
+  client.rpc=async(...args)=>{const response=await rpc(...args);if(args[0]!=='jobs_lead_directory')saved=true;return response;};
   client.from=table=>{const q=from(table);if(saved&&failReads)q.then=(yes,no)=>Promise.resolve({error:{code:'NETWORK'}}).then(yes,no);return q;};
   const h=await harness('admin','preview.invalid',liveCtx,client);await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="plan-create"]');
   await h.submit({title:'Confirmed',clientName:'Client',lead:'LEAD'});assert.equal(client.calls.length,1);
@@ -473,7 +481,7 @@ test('confirmed create with refresh failure cannot send a second create',async()
 test('unknown team, schedule and recovery outcomes never retry before authoritative refresh',async()=>{
   for(const method of ['assign','replaceLead','unassign','schedule','adminCloseSession']) {
     const client=method==='adminCloseSession'?executionTransport({status:'in_progress',otherSession:true}):planningTransport();let calls=0;
-    client.rpc=async()=>{calls++;return {error:{code:'NETWORK',message:'Lost reply'}};};
+    const readRpc=client.rpc;client.rpc=async(name,args)=>{if(name==='jobs_lead_directory')return readRpc(name,args);calls++;return {error:{code:'NETWORK',message:'Lost reply'}};};
     const h=await reviewHarness('admin',client);
     if(method==='adminCloseSession') {
       await h.click('[data-action="execute-recover"]');h.document.querySelector('[name="confirmRecovery"]').checked=true;
@@ -600,7 +608,7 @@ test('central mutation guard rejects closed Jobs, stale identity/revision and in
 test('expired auth during mutation clears protected state without retry or unknown-outcome form',async()=>{
   for(const error of [{code:'PGRST301'},{code:'SESSION_EXPIRED'},{status:401}]) {
     const client=reviewClient({status:'submitted_for_review'});let calls=0;
-    client.rpc=async()=>{calls++;return {error};};
+    const readRpc=client.rpc;client.rpc=async(name,args)=>{if(name==='jobs_lead_directory')return readRpc(name,args);calls++;return {error};};
     const h=await reviewHarness('admin',client);await confirmReview(h,'approve');
     assert.equal(calls,1);assert.equal(h.document.querySelector('#jobsShell').hidden,true);
     assert.equal(h.document.querySelector('#jobsModal').hidden,true);

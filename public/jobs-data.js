@@ -242,25 +242,31 @@
       },
       async directories() {
         const c=manager(),g=generation;
-        async function pages(name,fields,key,supervisors=false) {
+        async function pages(name,fields,key) {
           const all=[];
           for(let offset=0;;offset+=250){
             const rows=await query(c=>{
-              let q=client.from(name).select(fields).eq('company_id',c.companyId).eq('active',true);
-              if(supervisors)q=q.eq('role','supervisor');
+              const q=client.from(name).select(fields).eq('company_id',c.companyId).eq('active',true);
               return q.order(key).range(offset,offset+249);
             });
+            same(c,g);all.push(...rows);if(rows.length<250)return all;
+          }
+        }
+        async function leadPages() {
+          const all=[];
+          for(let offset=0;;offset+=250){
+            const rows=await query(c=>client.rpc('jobs_lead_directory',{p_company_id:c.companyId,p_offset:offset}));
             same(c,g);all.push(...rows);if(rows.length<250)return all;
           }
         }
         const [sites,employees,links]=await Promise.all([
           pages('sites','site_id,name,active','site_id'),
           pages('employees','employee_id,full_name,active','employee_id'),
-          pages('company_users','user_id,employee_id,role,active','user_id',true)
+          leadPages()
         ]);same(c,g);
         const team=employees.filter(e=>e.active===true&&e.employee_id).map(e=>({employeeId:e.employee_id,name:e.full_name,role:'Assigned Technician'}));
-        const ids=new Set(links.filter(u=>u.active===true&&u.role==='supervisor'&&u.employee_id).map(u=>u.employee_id));
-        return {sites:sites.filter(s=>s.active===true).map(s=>({siteId:s.site_id,name:s.name})),team,leads:team.filter(e=>ids.has(e.employeeId))};
+        const ids=new Map(links.map(u=>[u.employee_id,u]));
+        return {sites:sites.filter(s=>s.active===true).map(s=>({siteId:s.site_id,name:s.name})),team,leads:team.filter(e=>ids.has(e.employeeId)).map(e=>({...e,supervisorId:ids.get(e.employeeId).supervisor_id||null}))};
       },
       // Paginated summaries; request detail before rendering a workspace/card.
       async list({offset=0,limit=100}={}) {
