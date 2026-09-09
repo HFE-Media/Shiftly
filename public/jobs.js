@@ -403,8 +403,8 @@
   };
 
   function displayStatus(job) {
-    if (job.detailLoaded === false && job.status === 'in_progress') return ['In progress', 'scheduled'];
-    if (job.detailLoaded !== false && openSessions(job).length) return ["Working Now", "working"];
+    if (!Array.isArray(job.sessions) && job.status === 'in_progress') return ['In progress', 'scheduled'];
+    if (Array.isArray(job.sessions) && openSessions(job).length) return ["Working Now", "working"];
     return statusMap[job.status] || [job.status, ""];
   }
 
@@ -443,14 +443,50 @@
   }
 
   function topbar() {
-    const subtitle = !isMockMode ? "Job records and work sessions" : role === "admin" ? "Create, assign, track and complete field work." : "Assigned field work";
+    const subtitle = role === "admin" ? "Create, assign, track and complete field work." : "Assigned field work";
     return `<header class="platformTop jobsNativeTop">
       <div class="platformBrand"><div class="brandBadge"><i class="ph ph-briefcase"></i></div><div><div class="platformTitle">Shiftly Jobs</div><div class="platformSub">${subtitle}</div></div></div>
-      <div class="platformActions">
+      <div class="platformActions jobsGlobalActions">${!isMockMode ? hostNavigation() : `
         ${role === "admin" ? `<button class="miniIconBtn" type="button" data-action="close" title="Company Dashboard" aria-label="Company Dashboard"><i class="ph ph-buildings"></i></button><button class="miniIconBtn" type="button" data-action="billing" title="Open billing" aria-label="Open billing"><i class="ph ph-receipt"></i></button>` : ""}
         <button class="miniIconBtn" type="button" data-action="clocking" title="Open clocking" aria-label="Open clocking"><i class="ph ph-fingerprint"></i></button>
-      </div>
+      `}</div>
     </header>`;
+  }
+
+  function hostNavigationSource() {
+    return document.querySelector(role==='admin' ? '#companyAdminShell .platformActions' : '#appShell .headerActions');
+  }
+
+  let hostNavigationObserver;
+  function watchHostNavigation() {
+    hostNavigationObserver?.disconnect();
+    const source=hostNavigationSource();
+    if(!source)return;
+    hostNavigationObserver=new MutationObserver(()=>{
+      const target=root?.querySelector('.jobsGlobalActions');
+      if(!isMockMode&&!shell.hidden&&target)target.innerHTML=hostNavigation();
+    });
+    hostNavigationObserver.observe(source,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','disabled','class','style','title','aria-label']});
+  }
+
+  function hostNavigation() {
+    const source=hostNavigationSource();
+    if(!source)return ''; // Never invent access when the authenticated host is absent.
+    const back=role==='admin'?'<button class="miniIconBtn" type="button" data-action="close" title="Company Dashboard" aria-label="Company Dashboard"><i class="ph ph-squares-four"></i></button>':'';
+    return back+[...source.querySelectorAll('button[id]')].filter(button=>!button.hidden&&button.style.display!=='none').map(button=>{
+      const active=button.id===(role==='admin'?'btnOpenJobsAdmin':'btnOpenJobsSupervisor');
+      return `<button type="button" class="${h(button.className)}${active?' active jobsNavActive':''}" data-action="host-nav" data-host-id="${h(button.id)}" title="${h(button.title)}" aria-label="${h(button.getAttribute('aria-label')||button.title)}" ${active?'aria-current="page"':''} ${button.disabled?'disabled':''}>${button.innerHTML}</button>`;
+    }).join('');
+  }
+
+  async function navigateHost(id) {
+    const source=hostNavigationSource();
+    const button=[...(source?.querySelectorAll('button[id]')||[])].find(button=>button.id===id);
+    if(!button||button.hidden||button.disabled||button.style.display==='none')return;
+    if(id==='btnOpenJobsAdmin'||id==='btnOpenJobsSupervisor')return;
+    // Preserve the actual authenticated application's handlers and permission checks.
+    await closeJobs(false);
+    button.click();
   }
 
   function render() {
@@ -463,6 +499,16 @@
   }
 
   function renderLiveList() {
+    if(allJobsWorkspace) {
+      if(liveStatus==='ready'||liveStatus==='empty'){renderAllJobs();return;}
+      if(liveStatus==='loading-detail')return;
+      closeAllJobs(false);
+    }
+    if(liveStatus==='ready'||liveStatus==='empty') {
+      if(role==='supervisor')renderSupervisorDashboard();else renderAdminDashboard();
+      (root.querySelector('.jobsCompanyActions')||root.querySelector('.jobsSupervisorCounts')).insertAdjacentHTML('beforeend','<button class="miniIconBtn" type="button" data-action="live-retry" title="Refresh Jobs" aria-label="Refresh Jobs"><i class="ph ph-arrow-clockwise"></i></button>');
+      return;
+    }
     const loading=liveStatus==='loading-list'||liveStatus==='loading-detail';
     const error=liveStatus==='error';
     const content=loading ? '<p role="status">'+(liveStatus==='loading-detail'?'Loading Job detail…':'Loading Jobs…')+'</p>' :
@@ -495,7 +541,7 @@
     livePage={offset:Math.max(0,offset),limit:25,hasMore:false};
     liveStatus='loading-list';state={jobs:[],sequence:0};renderLiveList();
     try {
-      const rows=await liveAdapter.list(livePage);
+      const rows=await liveAdapter.dashboard();
       if(!liveReadValid(request,key))return;
       state={jobs:rows,sequence:0};livePage.hasMore=rows.length===livePage.limit;
       if(!planningPending)planningRefreshRequired=false;
@@ -545,7 +591,7 @@
     const scheduled = jobs.filter((job) => ["scheduled", "draft"].includes(job.status));
     const completed = jobs.filter((job) => job.status === "completed").slice(0, 5);
     root.innerHTML = `<div class="jobsApp platformWrap">${topbar()}
-      <section class="panel jobsCompanyContext"><div class="panelHead"><div class="companyProfileHead"><div class="companyLogoMark"><i class="ph ph-buildings"></i></div><div><div class="panelTitle">Demo Service Company</div><div class="mutedText">Jobs workspace</div></div></div><div class="jobsCompanyActions"><button class="platformBtn secondary inline jobsAllJobsBtn" type="button" data-action="all-jobs"><i class="ph ph-list-magnifying-glass"></i>View All Jobs</button><button class="platformBtn inline jobsCreateBtn" type="button" data-action="create"><i class="ph ph-plus"></i>Create Job</button></div></div><div class="panelBody"><div class="statGrid jobsNativeStats">${nativeStat(summary.scheduled, "Scheduled", "scheduled")}${nativeStat(summary.working, "Working", "in_progress")}${nativeStat(summary.review, "Awaiting Review", "submitted_for_review")}${nativeStat(summary.completed, "Completed", "completed")}${nativeStat(summary.attention, "Needs Attention", "attention")}</div></div></section>
+      <section class="panel jobsCompanyContext"><div class="panelHead"><div class="companyProfileHead"><div class="companyLogoMark"><i class="ph ph-buildings"></i></div><div><div class="panelTitle">${h(jobCardCompany().name)}</div><div class="mutedText">Jobs workspace</div></div></div><div class="jobsCompanyActions"><button class="platformBtn secondary inline jobsAllJobsBtn" type="button" data-action="all-jobs"><i class="ph ph-list-magnifying-glass"></i>View All Jobs</button><button class="platformBtn inline jobsCreateBtn" type="button" data-action="${isMockMode ? 'create' : 'plan-create'}" ${!isMockMode && (!canPlan() || planningPending || planningRefreshRequired) ? 'disabled' : ''}><i class="ph ph-plus"></i>Create Job</button></div></div><div class="panelBody"><div class="statGrid jobsNativeStats">${nativeStat(summary.scheduled, "Scheduled", "scheduled")}${nativeStat(summary.working, "Working", "in_progress")}${nativeStat(summary.review, "Awaiting Review", "submitted_for_review")}${nativeStat(summary.completed, "Completed", "completed")}${nativeStat(summary.attention, "Needs Attention", "attention")}</div></div></section>
       <div class="jobsAdminGroups">${adminGroup("Active Jobs", active)}${adminGroup("Awaiting Review", review, true)}${adminGroup("Scheduled Jobs", scheduled)}${adminGroup("Recently Completed", completed)}</div>
     </div>`;
   }
@@ -625,8 +671,8 @@
     const assigned = state.jobs.filter(isAssigned);
     const groups = [
       ["Current Job", "Active work session", assigned.filter((job) => !!currentSession(job)), true],
-      ["Continue Job", "Multi-day work ready to continue", assigned.filter((job) => ["in_progress", "correction_required"].includes(job.status) && !openSessions(job).length), false],
-      ["Scheduled", "Upcoming assigned work", assigned.filter((job) => job.status === "scheduled"), false],
+      ["Continue Job", "Multi-day work ready to continue", assigned.filter((job) => ["in_progress", "correction_required"].includes(job.status) && !currentSession(job)), false],
+      ["Scheduled", "Upcoming assigned work", assigned.filter((job) => ["scheduled", "draft"].includes(job.status)), false],
       ["Awaiting Review", "Submitted to the office", assigned.filter((job) => job.status === "submitted_for_review"), false],
       ["Recently Completed", "Read-only Job Cards", assigned.filter((job) => job.status === "completed").slice(0, 3), false]
     ];
@@ -711,6 +757,8 @@
 
   function reviewBar(job) {
     if(isMockMode)return '';
+    // Keep the work editor focused; lifecycle review remains on Overview/Review.
+    if(activeTab==='today')return '';
     const closed=['completed','cancelled'].includes(job.status);
     const buttons=[];
     const action=(method,label)=>`<button class="platformBtn inline jobsBtn ${method==='approve'?'success':method==='cancel'?'danger':'secondary'}" data-action="review-${method}">${label}</button>`;
@@ -765,12 +813,12 @@
   function teamTab(job) { return panel("Assigned team", "", `<div class="jobsDetailGrid">${job.team.map((person) => `<div class="jobsFieldCard"><div class="jobsPerson"><div class="jobsAvatar">${initials(person.name)}</div><div><b>${h(person.name)}</b><span>${h(person.employeeId)} · ${h(person.employeeId === job.lead?.employeeId ? "Lead Supervisor" : person.role)}</span></div></div></div>`).join("")}</div>`); }
   function todayWorkTab(job, readOnly) {
     const active = currentSession(job);
-    if(!isMockMode)return panel("Today's work",'',`<p>${active?`Your session started ${h(localDateTime(active.startedAt))}. Use Finish Work for Today to record work and pause.`:'No own open session. Previous work remains in Job Records.'}</p>`);
+    if(!isMockMode)readOnly=!canExecute(job)||['completed','cancelled','submitted_for_review'].includes(job.status);
     if (readOnly) return panel(job.status === "completed" ? "Completed Job" : !isMockMode ? "Today's work" : "Awaiting Review", "", `<div class="emptyState">This work record is read-only.</div>`);
-    if (!active) return panel("Today's work", "", `<div class="jobsTodayEmpty"><i class="ph ph-play-circle"></i><b>${job.status === "scheduled" ? "Start this Job to begin today's work." : "Continue this Job to begin a new work day."}</b><button class="platformBtn inline jobsBtn primary" type="button" data-action="start">${job.status === "scheduled" ? "Start Job" : "Continue Job"}</button></div>`);
-    const draft = job.currentDraft || { work: "", notes: "" };
+    if (!active) return panel("Today's work", "", `<div class="jobsTodayEmpty"><i class="ph ph-play-circle"></i><b>${job.status === "scheduled" ? "Start this Job to begin today's work." : "Continue this Job to begin a new work day."}</b><button class="platformBtn inline jobsBtn primary" type="button" data-action="${isMockMode ? 'start' : 'execute-start'}">${job.status === "scheduled" ? "Start Job" : "Continue Job"}</button></div>`);
+    const draft = job.currentDraft || (!isMockMode && liveDrafts.get(job.id)) || { work: "", notes: "" };
     return `<form id="jobsTodayForm" class="jobsTodayForm"><div class="jobsTodayHead"><div><span>Today's work</span><h2>${localDate(new Date().toISOString().slice(0, 10))}</h2></div><span class="mutedText">Session started ${localDateTime(active.startedAt)}</span></div><label class="jobsLabel jobsWorkDescription">Work Performed<textarea class="jobsInput platformInput" name="todayWork" required placeholder="Describe the work completed today">${h(draft.work)}</textarea></label>
-      <div class="jobsGroupedGrid jobsTodayRecords">${materialsTab(job, false)}${testingTab(job, false)}</div>${photosTab(job, false)}
+      <div class="jobsGroupedGrid jobsTodayRecords">${materialsTab(job, !isMockMode)}${testingTab(job, !isMockMode)}</div>${photosTab(job, !isMockMode)}
       <label class="jobsLabel jobsOutstandingNotes">Notes / Outstanding Work<textarea class="jobsInput platformInput" name="todayNotes" placeholder="What remains to be done? Include access notes or handover details.">${h(draft.notes)}</textarea></label>
       <div class="jobsTodayFinish"><div><b>Ready to finish this session?</b><span>Save this work record. The Job stays open for another day.</span></div><button class="platformBtn inline jobsBtn primary" type="submit"><i class="ph ph-stop-circle"></i>Finish Work for Today</button></div></form>`;
   }
@@ -810,6 +858,7 @@
   function jobCardCompany() {
     let company = null;
     try { company = typeof currentCompany === "function" ? currentCompany() : null; } catch {}
+    if(!company&&!isMockMode)company=currentJobsContext()?.company;
     return {
       name: String(company?.name || (isMockMode ? "Demo Service Company" : "Company")),
       logoUrl: String(company?.logo_url || "").trim()
@@ -909,12 +958,7 @@
   function createJobModal() {
     const directories = getDirectories();
     if (!directories) { toast('Jobs directories are not available yet.'); return; }
-    openModal({ title: "Create Job", submitLabel: "Create Job", body: `<div class="jobsCreateSections">
-      <section><h3>Job</h3><div class="jobsFormGrid jobsFormGridThree">${label("title", "Job Title", input("text", "e.g. DB board repair", true), true)}${label("priority", "Priority", `<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select>`)}${label("scheduleIntent", "Schedule this Job", `<input type="checkbox" name="NAME" value="yes"/>`)}${label("scheduled", "Scheduled Date", input("date"))}${label("scheduledTime", "Scheduled Time (optional)", input("time"))}${label("site", "Shiftly Site (optional)", `<select class="jobsInput" name="NAME"><option value="">No linked site</option>${directories.sites.map(site=>`<option value="${h(site.siteId)}">${h(site.name)}</option>`).join("")}</select>`, true)}</div></section>
-      <section><h3>Client</h3><div class="jobsFormGrid">${label("clientName", "Client Name", input("text", "e.g. Demo Engineering", true))}${label("contactName", "Contact Name", input("text", "Contact person"))}${label("phone", "Phone", input("tel", "+27"))}${label("email", "Email", input("email", "name@example.test"))}${label("address", "Service Address", input("text", "Street / area / province", true), true)}</div></section>
-      <section><h3>Work Required</h3>${label("description", "Client Request / Job Description", `<textarea class="jobsInput" name="NAME" placeholder="What must the field team do?" required></textarea>`, true)}</section>
-      <section><h3>Assign Team</h3><div class="jobsFormGrid">${label("lead", "Lead Supervisor", `<select class="jobsInput" name="NAME">${directories.leads.map(person=>`<option value="${h(person.employeeId)}">${h(person.name)}</option>`).join("")}</select>`)}<label class="jobsLabel">Find Team Members<input id="jobsTeamSearch" class="jobsInput" type="search" placeholder="Search employees"/></label></div><div class="jobsTeamPicker">${directories.team.filter(person=>!directories.leads.some(lead=>lead.employeeId===person.employeeId)).map((person) => `<label class="jobsCheck" data-team-option="${h(`${person.name} ${person.role}`.toLowerCase())}"><input type="checkbox" name="team" value="${person.employeeId}"/><span><b>${h(person.name)}</b><small>${h(person.role)} · ${h(person.employeeId)}</small></span></label>`).join("")}</div></section>
-    </div>`, onSubmit: async (data) => {
+    openModal({ title: "Create Job", submitLabel: "Create Job", body: createJobFields(directories), onSubmit: async (data) => {
       if (!isMockMode || !dataService) throw new Error('Jobs backend connection is not active.');
       if(modal.querySelector('[name="scheduleIntent"]').checked && !data.get('scheduled')) throw new Error('Choose a date to schedule this Job.');
       const job = await dataService.create({ title: data.get("title"), clientName: data.get("clientName"),
@@ -924,6 +968,15 @@
         teamIds: data.getAll("team"), leadId: data.get("lead") });
       state = mockState(); closeModal(); toast(`${job.jobNumber} created`); openJob(job.id); dashboardDirty = true;
     }});
+  }
+
+  function createJobFields(directories) {
+    return `<div class="jobsCreateSections">
+      <section><h3>Job</h3><div class="jobsFormGrid jobsFormGridThree">${label("title", "Job Title", input("text", "e.g. DB board repair", true), true)}${label("priority", "Priority", `<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="low">Low</option><option value="high">High</option><option value="urgent">Urgent</option></select>`)}${label("scheduled", "Scheduled Date", input("date"))}${label("scheduledTime", "Scheduled Time (optional)", input("time"))}<label class="jobsCheck jobsCreateSchedule"><input type="checkbox" name="scheduleIntent" value="yes"/><span>Schedule this Job</span></label>${label("site", "Shiftly Site (optional)", `<select class="jobsInput" name="NAME"><option value="">No linked site</option>${directories.sites.map(site=>`<option value="${h(site.siteId)}">${h(site.name)}</option>`).join("")}</select>`, true)}</div></section>
+      <section><h3>Client</h3><div class="jobsFormGrid">${label("clientName", "Client Name", input("text", "e.g. Demo Engineering", true))}${label("contactName", "Contact Name", input("text", "Contact person"))}${label("phone", "Phone", input("tel", "+27"))}${label("email", "Email", input("email", "name@example.test"))}${label("address", "Service Address", input("text", "Street / area / province", true), true)}</div></section>
+      <section><h3>Work Required</h3>${label("description", "Client Request / Job Description", `<textarea class="jobsInput" name="NAME" placeholder="What must the field team do?" required></textarea>`, true)}</section>
+      <section><h3>Assign Team</h3><div class="jobsFormGrid">${label("lead", "Lead Supervisor", `<select class="jobsInput" name="NAME">${!isMockMode ? '<option value="">Select eligible lead</option>' : ''}${directories.leads.map(person=>`<option value="${h(person.employeeId)}">${h(person.name)}</option>`).join("")}</select>`)}<label class="jobsLabel">Find Team Members<input id="jobsTeamSearch" class="jobsInput" type="search" placeholder="Search employees"/></label></div><div class="jobsTeamPicker">${directories.team.map((person) => `<label class="jobsCheck" data-team-option="${h(`${person.name} ${person.role}`.toLowerCase())}"><input type="checkbox" name="team" value="${person.employeeId}"/><span><b>${h(person.name)}</b><small>${h(person.role)} · ${h(person.employeeId)}</small></span></label>`).join("")}</div></section>
+    </div>`;
   }
 
   async function planningDirectories() {
@@ -962,7 +1015,7 @@
     const create=root.querySelector('[data-action="plan-create"]');if(create)create.disabled=locked||planningRefreshRequired||!canPlan();
   }
   async function fetchPlanningState(jobId) {
-    const rows=await liveAdapter.list({offset:0,limit:25});
+    const rows=await liveAdapter.dashboard();
     const detail=jobId?await liveAdapter.detail(jobId):null;
     const workerActive=liveContext().role==='supervisor'?await liveAdapter.workEligibility():false;
     return {rows,detail,workerActive};
@@ -974,6 +1027,7 @@
       const fresh=await fetchPlanningState(planningJobId);
       if(key!==JSON.stringify(liveContext())||!canOperate())return;
       liveWorkerActive=fresh.workerActive;
+      if(fresh.detail&&!currentSession(fresh.detail))liveDrafts.delete(fresh.detail.id);
       state={jobs:fresh.rows,sequence:0};if(fresh.detail)liveDetail=fresh.detail;
       planningRefreshRequired=false;
       if(fresh.detail&&['completed','cancelled'].includes(fresh.detail.status)){
@@ -1014,6 +1068,7 @@
     try {
       const result=await liveAdapter[method](...args);confirmed=true;
       if(!current())return;
+      if(method==='finish')liveDrafts.delete(jobId);
       const id=method==='create'?result.id:jobId;
       planningJobId=id;
       const fresh=await fetchPlanningState(id);
@@ -1047,7 +1102,7 @@
       planningJobId=action==='create'?'':liveDetail?.id||'';
       const options=people=>people.map(e=>`<option value="${h(e.employeeId)}">${h(e.name)}</option>`).join('');
       if(action==='create') {
-        openModal({planning:true,title:'Create Job',submitLabel:'Create Job',copy:'Job number and snapshots are generated by the backend.',body:`<div class="jobsFormGrid">${label('title','Job Title',input('text','Job title',true))}${label('clientName','Client Name',input('text','Client name',true))}${label('contactName','Contact Name',input('text'))}${label('email','Client Email',input('email'))}${label('phone','Client Phone',input('tel'))}${label('site','Site',`<select name="NAME" class="jobsInput"><option value="">No linked site</option>${dirs.sites.map(s=>`<option value="${h(s.siteId)}">${h(s.name)}</option>`).join('')}</select>`)}${label('address','Service Address',input('text'))}${label('description','Work Required','<textarea name="NAME" class="jobsInput"></textarea>')}${label('priority','Priority','<select class="jobsInput" name="NAME"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option><option value="low">Low</option></select>')}${label('lead','Lead Technician',`<select name="NAME" class="jobsInput" required><option value="">Select eligible lead</option>${options(dirs.leads)}</select>`)}${label('scheduleIntent','Schedule this Job','<input type="checkbox" name="NAME"/>')}${label('scheduled','Start date',input('date'))}${label('scheduledTime','Start time (South Africa)',input('time','','', '08:00'))}</div><h3>Assigned Technicians</h3><p>The selected lead is included automatically.</p><div class="jobsTeamPicker">${dirs.team.map(e=>`<label class="jobsCheck"><input type="checkbox" name="team" value="${h(e.employeeId)}"/>${h(e.name)}</label>`).join('')}</div>`,onSubmit:async form=>{
+        openModal({planning:true,title:'Create Job',submitLabel:'Create Job',body:createJobFields(dirs),onSubmit:async form=>{
           const data=validatePlanCreate({title:form.get('title'),clientName:form.get('clientName'),clientContactName:form.get('contactName'),clientEmail:form.get('email'),clientPhone:form.get('phone'),siteId:form.get('site'),serviceAddress:form.get('address'),description:form.get('description'),priority:form.get('priority'),leadId:form.get('lead'),teamIds:form.getAll('team'),scheduleRequested:modal.querySelector('[name="scheduleIntent"]').checked===true,scheduledDate:form.get('scheduled'),scheduledTime:form.get('scheduledTime')},dirs);
           await planningMutation('create',[data]);
         }});return;
@@ -1101,6 +1156,10 @@
         await planningMutation('adminCloseSession',[current.id,current.revision,sessionId,form.get('reason').trim()],current.id);
       }
     }});
+    if(action==='finish') {
+      const draft=job.currentDraft||liveDrafts.get(job.id);
+      if(draft){modal.querySelector('[name="work"]').value=draft.work||'';modal.querySelector('[name="notes"]').value=draft.notes||'';}
+    }
   }
 
   async function startJob(job) {
@@ -1206,6 +1265,7 @@
       liveAdapter?.clear();
       liveAdapter=window.ShiftlyJobsData.createSupabase({client:sb,getContext:liveContext,readOnly:true,planning:['owner','admin'].includes(context.role),execution:true,review:true});
       role=context.role==='supervisor'?'supervisor':'admin';
+      watchHostNavigation();
       hideOperationalShells();shell.hidden=false;screen='dashboard';
       await loadLiveList(0);
       if(jobId && !shell.hidden) await loadLiveDetail(jobId);
@@ -1220,11 +1280,13 @@
     if (jobId) openJob(jobId); else window.scrollTo(0, 0);
   }
 
-  async function closeJobs() {
+  async function closeJobs(returnToHost=true) {
+    hostNavigationObserver?.disconnect();
     if (!isMockMode) { liveRequest++;liveAdapter?.clear();liveAdapter=null;liveDetail=null;state={jobs:[],sequence:0};directoryRequest++;directoryCache=null;liveDrafts.clear();liveWorkerActive=false;planningPending=false; }
     closeJob(); closeAllJobs(false);
     shell.hidden = true; closeModal();
     if (!isMockMode) root.innerHTML='';
+    if(!returnToHost)return;
     if (isLocalDevelopment && demoRoleFromUrl()) { const auth = document.getElementById("authScreen"); if (auth) auth.hidden = false; return; }
     try {
       const appRole = getAppRole();
@@ -1302,7 +1364,7 @@
       if (event.target.id === "jobsSearch") { adminSearch = event.target.value; const cursor = event.target.selectionStart; renderAllJobs(); const next = allJobsWorkspace?.querySelector("#jobsSearch"); next?.focus(); next?.setSelectionRange(cursor, cursor); }
       if (["todayWork", "todayNotes"].includes(event.target.name)) { const job = selectedJob(); if (job) { job.currentDraft ||= { work: "", notes: "" }; job.currentDraft[event.target.name === "todayWork" ? "work" : "notes"] = event.target.value; try { if(isMockMode) dataService.saveDraft(job.id,job.currentDraft); else liveDrafts.set(job.id,{...job.currentDraft}); } catch(error) { toast(error.message); } } }
     });
-    root.addEventListener("submit", (event) => { if (event.target.id !== "jobsTodayForm") return; event.preventDefault(); const job = selectedJob(); const open = job && currentSession(job); if (!job || !open) return; const data = new FormData(event.target); performAction(() => finishWork(job, open, data.get("todayWork"), data.get("todayNotes"))); });
+    root.addEventListener("submit", (event) => { if (event.target.id !== "jobsTodayForm") return; event.preventDefault(); const job = selectedJob(); const open = job && currentSession(job); if (!job || !open) return; const data = new FormData(event.target); if(!isMockMode){openExecution('finish');const work=modal.querySelector('[name="work"]'),notes=modal.querySelector('[name="notes"]');if(work)work.value=data.get('todayWork')||'';if(notes)notes.value=data.get('todayNotes')||'';return;} performAction(() => finishWork(job, open, data.get("todayWork"), data.get("todayNotes"))); });
     modal.addEventListener("click", (event) => { if (event.target === modal || event.target.closest("[data-modal-close]")) closeModal(); });
     modal.addEventListener("submit", (event) => { event.preventDefault(); if (modalSubmit) { const action=modalSubmit; const data=new FormData(event.target); if(!isMockMode&&modalPlanning)submitPlanning(action,data);else performAction(() => action(data)); } });
     modal.addEventListener('click',event=>{if(event.target.closest('[data-plan-refresh]'))refreshPlanning();});
@@ -1333,17 +1395,18 @@
     const action = button.dataset.action;
     if (!isMockMode) {
       if(button.disabled)return;
+      if(action==='host-nav')return navigateHost(button.dataset.hostId);
       if(action.startsWith('review-'))return openReview(action.slice(7));
       if(action==='execute-start')return openExecution('start');
       if(action==='execute-finish')return openExecution('finish');
       if(action==='execute-recover')return openExecution('recover',button.dataset.session);
-      if(action==='plan-create')return openPlanning('create');
+      if(action==='plan-create'||action==='create')return openPlanning('create');
       if(action==='plan-team')return openPlanning('team');
       if(action==='plan-schedule')return openPlanning('schedule');
       if(action==='live-retry')return loadLiveList();
       if(action==='live-prev')return loadLiveList(livePage.offset-livePage.limit);
       if(action==='live-next')return loadLiveList(livePage.offset+livePage.limit);
-      if(!['close','billing','clocking','dashboard','open','tab','print'].includes(action)){toast('Jobs is read-only in this checkpoint.');return;}
+      if(!['close','billing','clocking','dashboard','open','tab','print','all-jobs','all-jobs-close','filter'].includes(action)){toast('Jobs is read-only in this checkpoint.');return;}
     }
     if (action === "close") return closeJobs();
     if (action === "billing") return openBillingModule();

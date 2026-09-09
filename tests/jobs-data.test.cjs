@@ -8,6 +8,16 @@ vm.runInNewContext(fs.readFileSync('public/jobs-data.js','utf8'),sandbox);
 const API = sandbox.window.ShiftlyJobsData;
 const person={employeeId:'E100',name:'Demo Supervisor',role:'supervisor'};
 const ctx=role=>({companyId:'demo',userId:role,role,jobsEnabled:true,employeeId:'E100'});
+test('dashboard reads all scoped pages and joins only matching assignments and sessions',async()=>{
+  let c=ctx('admin');const requests=[];
+  const jobs=Array.from({length:251},(_,i)=>({id:'j'+i,company_id:'demo',lifecycle_status:'scheduled'}));
+  const client={from(name){const r={name};requests.push(r);const q={select(){return q;},eq(k,v){r[k]=v;return q;},order(){return q;},range(a,b){r.a=a;r.b=b;return q;},then(resolve){const rows=name==='jobs'?jobs:name==='job_assignments'?[{job_id:'j250',employee_id:'E100',employee_name:'Lead',assignment_role:'lead'}]:[{job_id:'j250',id:'s',employee_id:'E100',started_at:'2026-09-09T08:00:00Z',ended_at:null}];return Promise.resolve({data:rows.slice(r.a,r.b+1)}).then(resolve);}};return q;}};
+  const api=API.createSupabase({client,getContext:()=>c,readOnly:true});
+  const rows=await api.dashboard();assert.equal(rows.length,251);assert.equal(rows[250].lead.name,'Lead');assert.equal(rows[250].sessions.length,1);assert.equal(rows[0].sessions.length,0);assert.equal(rows[250].detailLoaded,false);
+  assert.ok(requests.every(r=>r.company_id==='demo'));assert.equal(requests.filter(r=>r.name==='jobs').length,2);
+  assert.equal(api.create,undefined);assert.equal(api.setEntitlement,undefined);
+});
+
 test('review facade maps only reviewed lifecycle arguments and enforces role boundary',async()=>{
   let c=ctx('supervisor');const calls=[];
   const api=API.createSupabase({readOnly:true,review:true,getContext:()=>c,client:{rpc:async(name,args)=>{calls.push({name,args});return {data:8};}}});

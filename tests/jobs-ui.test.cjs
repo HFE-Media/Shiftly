@@ -17,7 +17,7 @@ function transport(respond) {
       then(resolve,reject){return Promise.resolve().then(()=>respond(r)).then(resolve,reject);}};return q;
   }};
 }
-function storedResponse(r) {return {data:r.table==='jobs'?(r.single?liveRow:[liveRow]):[],error:null};}
+function storedResponse(r) {return {data:r.table==='jobs'?(r.single?liveRow:[liveRow]):r.table==='job_assignments'?[{job_id:liveRow.id,employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',assignment_role:'lead'}]:[],error:null};}
 function planningTransport() {
   let job={...liveRow},revision=1;
   const calls=[];
@@ -45,7 +45,7 @@ function executionTransport({active=true,assigned=true,status='scheduled',otherS
     if(r.table==='jobs')return {data:r.single?{...model.job,revision:model.revision}:[{...model.job,revision:model.revision}]};
     if(r.table==='employees')return {data:active?[{employee_id:liveCtx.employeeId,active:true}]:[]};
     const rows={job_assignments:assigned?[{employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',assignment_role:lead?'lead':'member'}]:[],job_time_entries:model.sessions,job_work_days:model.days,job_activity:model.activity};
-    return {data:JSON.parse(JSON.stringify(rows[r.table]||[]))};
+    return {data:JSON.parse(JSON.stringify((rows[r.table]||[]).map(row=>({job_id:model.job.id,...row}))))};
   });
   client.model=model;
   client.rpc=async(name,args)=>{
@@ -76,7 +76,10 @@ function executionTransport({active=true,assigned=true,status='scheduled',otherS
   return client;
 }
 async function harness(role='admin',host='localhost',appContext=null,client=null) {
-  const {window}=parseHTML('<html><body><div id="authScreen"></div><button id="btnOpenJobsAdmin"></button><button id="btnOpenJobsSupervisor"></button></body></html>');
+  const hostDocument=parseHTML(fs.readFileSync('public/login.html','utf8')).document;
+  const companyNavigation=hostDocument.querySelector('#companyAdminShell .platformActions').outerHTML;
+  const supervisorNavigation=hostDocument.querySelector('#appShell .headerActions').outerHTML;
+  const {window}=parseHTML(`<html><body><div id="authScreen"></div><main id="companyAdminShell">${companyNavigation}</main><main id="appShell">${supervisorNavigation}</main></body></html>`);
   const timers=[];
   const context={window,document:window.document,location:new URL(`http://${host}/login?jobsDemo=${role}&jobsQa=1`),
     URL,URLSearchParams,crypto,Intl,Date,console,MutationObserver:window.MutationObserver,
@@ -86,6 +89,7 @@ async function harness(role='admin',host='localhost',appContext=null,client=null
     FormData:class {constructor(form){this.form=form;}get(name){return this.form.querySelector(`[name="${name}"]`)?.value ?? null;}getAll(name){return [...this.form.querySelectorAll(`[name="${name}"]`)].filter(el=>el.type!=='checkbox'||el.checked).map(el=>el.value);}}
   };
   window.location=context.location;window.scrollTo=()=>{};
+  window.HTMLElement.prototype.getClientRects=()=>[{width:100,height:40}];
   if(client)context.sb=client;
   let currentContext=appContext;
   window.ShiftlyJobsContext={get:()=>currentContext||{}};
@@ -96,7 +100,7 @@ async function harness(role='admin',host='localhost',appContext=null,client=null
   vm.runInContext(fs.readFileSync('public/jobs-data.js','utf8'),context);
   // Test-only closure inspection; never included in production Jobs exports.
   const source=fs.readFileSync('public/jobs.js','utf8').replace(/\}\)\(\);\s*$/,`window.__jobsTest={context:currentJobsContext,employee:jobsEmployeeId,directories:getDirectories,
-    photos:photosTab,signoff:signoffTab,media:mediaAvailable,
+    photos:photosTab,signoff:signoffTab,media:mediaAvailable,loadLiveDetail,
     state:()=>state,seed:()=>{state={jobs:[{id:'old-company'}]};liveDrafts.set('old','draft');directoryCache={team:[]};},
     draftCount:()=>liveDrafts.size,generation:()=>contextGeneration,mutate:performAction,start:startJob,finish:finishWork,adapter:()=>liveAdapter,detail:()=>liveDetail,validate:validatePlanCreate,openPlanning,planningMutation,closeJobs,refreshRequired:()=>planningRefreshRequired};})();`);
   vm.runInContext(source,context);
@@ -222,15 +226,15 @@ test('company loader fails closed on refresh errors and preserves Billing in Job
   }
 });
 
-test('eligible live roles read summaries without fanout; lifecycle mutations remain locked',async()=>{
+test('eligible live roles read scoped dashboard relationships without per-job fanout; mutations remain locked',async()=>{
   for(const role of ['owner','admin','supervisor']){
     const client=transport(storedResponse),h=await harness('admin','preview.invalid',{...liveCtx,role},client);
     await h.window.ShiftlyJobs.openAdmin();
-    assert.equal(client.requests.length,1);assert.equal(client.requests[0].filters.company_id,'company-a');
+    assert.equal(client.requests.length,3);assert.ok(client.requests.every(r=>r.filters.company_id==='company-a'));
     assert.equal(h.window.__jobsTest.state().jobs[0].detailLoaded,false);
-    assert.equal('sessions' in h.window.__jobsTest.state().jobs[0],false);
+    assert.equal(h.window.__jobsTest.state().jobs[0].sessions.length,0);
     assert.match(h.document.body.textContent,/Stored work/);assert.doesNotMatch(h.document.body.textContent,/E100|Thabo|Highveld|Demo Service/);
-    assert.equal(h.document.querySelector('.jobsBtn.primary').disabled,role==='supervisor');
+    assert.equal(!!h.document.querySelector('[data-action="plan-create"]'),role!=='supervisor');
     assert.equal(h.window.__jobsTest.adapter().evidence,undefined);
     await h.window.__jobsTest.mutate(()=>assert.fail('Mutation handler ran'));
     await assert.rejects(h.window.__jobsTest.start({id:'real-job'}),/read-only/);
@@ -244,6 +248,74 @@ test('eligible live roles read summaries without fanout; lifecycle mutations rem
   }
 });
 
+test('live Jobs mirrors role-specific host navigation, active Jobs, logout and Billing visibility',async()=>{
+  for(const role of ['owner','admin','supervisor']){
+    const h=await harness('admin','preview.invalid',{...liveCtx,role},transport(storedResponse));
+    const admin=role!=='supervisor';
+    const logout=h.document.getElementById(admin?'btnCompanyAdminLogout':'btnLogout');let signedOut=0;
+    logout.addEventListener('click',()=>signedOut++);
+    const switchButton=h.document.getElementById(admin?'btnCompanyAdminPortfolio':'btnBackToPortfolio');switchButton.hidden=false;
+    await h.window.ShiftlyJobs.openAdmin();
+    const nav=()=>h.document.querySelector('.jobsGlobalActions');
+    assert.ok(nav().querySelector(`[data-host-id="${logout.id}"]`));
+    assert.ok(nav().querySelector(`[data-host-id="${switchButton.id}"]`));
+    assert.equal(nav().querySelector('[data-host-id="btnOpenBilling"]'),null);
+    assert.ok(nav().querySelector('[aria-current="page"].jobsNavActive'));
+    assert.equal(!!nav().querySelector('[data-action="close"]'),admin);
+    if(admin){
+      const billing=h.document.getElementById('btnOpenBilling');let opened=0;billing.addEventListener('click',()=>opened++);
+      billing.hidden=false;await tick();assert.ok(nav().querySelector('[data-host-id="btnOpenBilling"]'));
+      const stale=nav().querySelector('[data-host-id="btnOpenBilling"]');billing.hidden=true;
+      stale.click();await tick();assert.equal(opened,0);assert.equal(nav().querySelector('[data-host-id="btnOpenBilling"]'),null);
+    }
+    await h.click(`.jobsGlobalActions [data-host-id="${logout.id}"]`);
+    assert.equal(signedOut,1);assert.equal(h.document.querySelector('#jobsShell').hidden,true);
+    assert.equal(h.window.__jobsTest.adapter(),null);assert.equal(h.window.__jobsTest.state().jobs.length,0);
+  }
+});
+
+test('host company-navigation handlers are reused and clear the Jobs workspace before running',async()=>{
+  const h=await harness('admin','preview.invalid',liveCtx,transport(storedResponse));
+  const button=h.document.getElementById('btnCompanyAdminPortfolio');button.hidden=false;let calls=0;
+  button.addEventListener('click',()=>{calls++;assert.equal(h.document.querySelector('#jobsShell').hidden,true);assert.equal(h.window.__jobsTest.state().jobs.length,0);});
+  await h.window.ShiftlyJobs.openAdmin();await h.click('.jobsGlobalActions [data-host-id="btnCompanyAdminPortfolio"]');assert.equal(calls,1);
+});
+
+test('live Admin reuses approved dashboard, All Jobs and sectioned Create form',async()=>{
+  const h=await harness('admin','preview.invalid',{...liveCtx,company:{name:'Actual company'}},planningTransport());
+  await h.window.ShiftlyJobs.openAdmin();
+  assert.ok(h.document.querySelector('.jobsCompanyContext'));
+  assert.equal(h.document.querySelectorAll('.jobsNativeStats .stat').length,5);
+  assert.equal(h.document.querySelectorAll('.jobsAdminGroups .jobsGroupPanel').length,4);
+  assert.match(h.document.querySelector('.jobsCompanyContext').textContent,/Actual company/);
+  await h.click('[data-action="all-jobs"]');
+  assert.ok(h.document.querySelector('.jobsAllJobsCard'));
+  await h.click('.jobsAllJobsCard [data-action="open"]');
+  await h.click('[data-action="dashboard"]');
+  assert.ok(h.document.querySelector('.jobsAllJobsCard'));
+  await h.click('[data-action="all-jobs-close"]');
+  await h.click('[data-action="plan-create"]');
+  assert.equal(h.document.querySelectorAll('.jobsCreateSections > section').length,4);
+  assert.ok(h.document.querySelector('#jobsTeamSearch'));
+  assert.match(h.document.querySelector('#jobsModal').textContent,/Lead Supervisor/);
+});
+
+test('live Supervisor uses grouped dashboard and Today form without mock evidence writes',async()=>{
+  const client=executionTransport({status:'in_progress'});
+  client.model.sessions.push({id:'own',employee_id:liveCtx.employeeId,started_at:'2026-09-09T08:00:00Z',ended_at:null});
+  const h=await harness('admin','preview.invalid',{...liveCtx,role:'supervisor'},client);
+  await h.window.ShiftlyJobs.openSupervisor();
+  assert.equal(h.document.querySelectorAll('.jobsSupervisorGroup').length,5);
+  assert.ok(h.document.querySelector('.jobsSupervisorRow.current'));
+  await h.click('[data-action="open"]');
+  const form=h.document.querySelector('#jobsTodayForm');assert.ok(form);
+  assert.equal(h.document.querySelector('[data-action="add-material"]'),null);
+  form.querySelector('[name="todayWork"]').value='Draft work';
+  form.dispatchEvent(new h.window.Event('submit',{bubbles:true,cancelable:true}));await tick();
+  assert.equal(h.document.querySelector('#jobsModal [name="work"]').value,'Draft work');
+  assert.equal(client.model.calls.length,0,'opening finish confirmation must not write');
+});
+
 test('disabled, missing entitlement and ineligible roles initialize no adapter and perform zero reads',async()=>{
   for(const c of [{...liveCtx,jobsEnabled:false},{...liveCtx,jobsEnabled:undefined},{...liveCtx,jobsEnabled:null},
     ...['employee','billing','viewer','unknown'].map(role=>({...liveCtx,role})),{...liveCtx,role:'supervisor',employeeId:''}]){
@@ -254,22 +326,22 @@ test('disabled, missing entitlement and ineligible roles initialize no adapter a
   }
 });
 
-test('live loading, pagination, empty and explicit retry never use fixtures',async()=>{
-  let resolve,mode='loading';const client=transport(r=>mode==='loading'?new Promise(done=>resolve=done):mode==='error'?{error:{code:'NETWORK',message:'offline'}}:{data:[]});
+test('live dashboard loading, empty and explicit retry never use fixtures',async()=>{
+  let resolve,mode='loading';const client=transport(r=>r.table!=='jobs'?{data:[]}:mode==='loading'?new Promise(done=>resolve=done):mode==='error'?{error:{code:'NETWORK',message:'offline'}}:{data:[]});
   const h=await harness('admin','preview.invalid',liveCtx,client);
   const opening=h.window.ShiftlyJobs.openAdmin();await tick();assert.match(h.document.body.textContent,/Loading Jobs/);
   resolve({data:Array.from({length:25},(_,i)=>({...liveRow,id:'j'+i}))});await opening;
-  mode='empty';await h.click('[data-action="live-next"]');
-  assert.deepEqual(client.requests.at(-1).range,[25,49]);assert.match(h.document.body.textContent,/No Jobs to show/);
-  mode='error';await h.click('[data-action="live-prev"]');
+  mode='empty';await h.click('[data-action="live-retry"]');
+  assert.match(h.document.body.textContent,/No active jobs/i);
+  mode='error';await h.click('[data-action="live-retry"]');
   assert.match(h.document.body.textContent,/Retry list/);assert.doesNotMatch(h.document.body.textContent,/Thabo|Highveld/);
   const count=client.requests.length;await tick();assert.equal(client.requests.length,count);
-  mode='empty';await h.click('[data-action="live-retry"]');assert.equal(client.requests.length,count+1);
+  mode='empty';await h.click('[data-action="live-retry"]');assert.equal(client.requests.length,count+3);
 });
 
 test('late list and detail are discarded on company switch and sign-out',async()=>{
   for(const detail of [false,true]) for(const nextContext of [{...liveCtx,companyId:'company-b',version:2},{}]){
-    let resolve;const client=transport(r=>(detail?r.single:true)?new Promise(done=>resolve=done):storedResponse(r));
+    let resolve;const client=transport(r=>(detail?r.single:r.table==='jobs')?new Promise(done=>resolve=done):storedResponse(r));
     const h=await harness('admin','preview.invalid',liveCtx,client);
     let pending=h.window.ShiftlyJobs.openAdmin();
     if(detail){await pending;pending=h.click('[data-action="open"]');}
@@ -298,7 +370,7 @@ test('completed live Job Card uses persisted snapshot, not current company names
   await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="open"]');await h.click('[data-tab="card"]');
   const card=h.document.querySelector('.jobsJobCardPaper');assert.ok(card);
   assert.match(card.textContent,/Frozen Company/);assert.match(card.textContent,/Frozen title/);assert.doesNotMatch(card.textContent,/New Company/);
-  assert.deepEqual([...new Set(client.requests.map(r=>r.table))],['jobs','job_completion_snapshots']);
+  assert.deepEqual([...new Set(client.requests.map(r=>r.table))],['jobs','job_assignments','job_time_entries','job_completion_snapshots']);
 });
 
 test('live detail loads stored child records and rejects revision mismatch without retry',async()=>{
@@ -449,7 +521,7 @@ test('assigned active Supervisor starts, finishes and continues multi-day work w
 test('unassigned, inactive, missing identity and closed states expose no execution controls',async()=>{
   for(const options of [{assigned:false},{active:false},{status:'draft'},{status:'submitted_for_review'},{status:'cancelled'}]){
     const client=executionTransport(options),h=await harness('admin','preview.invalid',{...liveCtx,role:'supervisor'},client);
-    await h.window.ShiftlyJobs.openSupervisor();await h.click('[data-action="open"]');assert.equal(h.document.querySelector('[data-action="execute-start"]'),null);assert.equal(h.document.querySelector('[data-action="execute-finish"]'),null);assert.equal(client.model.calls.length,0);
+    await h.window.ShiftlyJobs.openSupervisor();await h.window.__jobsTest.loadLiveDetail(liveRow.id);assert.equal(h.document.querySelector('[data-action="execute-start"]'),null);assert.equal(h.document.querySelector('[data-action="execute-finish"]'),null);assert.equal(client.model.calls.length,0);
   }
   const client=executionTransport(),h=await harness('admin','preview.invalid',{...liveCtx,role:'supervisor',employeeId:''},client);await h.window.ShiftlyJobs.openSupervisor();assert.equal(client.requests.length,0);
 });
@@ -548,7 +620,7 @@ test('late mutation from a closed workspace cannot replace a reopened same-compa
 });
 async function reviewHarness(role,client) {
   const h=await harness('admin','preview.invalid',{...liveCtx,role},client);
-  await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="open"]');return h;
+  await h.window.ShiftlyJobs.openAdmin();await h.window.__jobsTest.loadLiveDetail(liveRow.id);return h;
 }
 async function confirmReview(h,method,values={}) {
   await h.click(`[data-action="review-${method}"]`);h.document.querySelector('[name="confirmLifecycle"]').checked=true;await h.submit(values);

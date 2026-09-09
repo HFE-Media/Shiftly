@@ -700,6 +700,12 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
   padding: 0 0 64px;
 }
 .jobsNativeTop { margin-bottom: 14px; }
+.jobsNavActive { border-color: var(--gold); background: rgba(212,175,55,.16); color: var(--gold); }
+.jobsNativeTop .jobsGlobalActions { flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; }
+@media (max-width: 600px) {
+  .jobsNativeTop:has(.jobsNavActive) { flex-wrap: wrap; }
+  .jobsNativeTop .jobsGlobalActions:has(.jobsNavActive) { flex-basis: 100%; justify-content: flex-end; }
+}
 .jobsNativeTop .brandBadge { background: linear-gradient(180deg, #e7c95f, #b8860b); color: #140f06; }
 .jobsNativeTop .platformTitle { font-size: 22px; }
 .jobsCompanyContext { margin-bottom: 14px; }
@@ -711,6 +717,7 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 .jobsNativeStats .stat b { font-size: 19px; }
 .jobsNativeStats .stat span { font-size: 10px; }
 .jobsCompanyActions { display: flex; align-items: center; gap: 8px; }
+.jobsCreateSchedule { grid-column: 1 / -1; justify-content: flex-start; }
 .jobsAllJobsBtn { display: inline-flex; align-items: center; gap: 8px; }
 .jobsAllJobsBtn i { font-size: 18px; }
 .jobsStatShortcut { color: var(--jobs-cream); font: inherit; text-align: left; cursor: pointer; transition: border-color 150ms ease, background 150ms ease; }

@@ -269,6 +269,24 @@
         return rows.map(job=>summary(normalize({job})));
       },
       assignedJobs(){ return this.list(); }, // SQL, not a browser filter, scopes Supervisors.
+      async dashboard() {
+        const c=context(),g=generation;
+        async function all(name) {
+          const rows=[];
+          for(let offset=0;;offset+=250) {
+            const page=await query(c=>client.from(name).select('*').eq('company_id',c.companyId).order('id').range(offset,offset+249));
+            same(c,g);rows.push(...page);if(page.length<250)return rows;
+          }
+        }
+        // RLS scopes every read. Summary relationships are not authority to mutate;
+        // opening a workspace still reloads its detail and current revision.
+        const [jobs,assignments,sessions]=await Promise.all(['jobs','job_assignments','job_time_entries'].map(all));
+        same(c,g);
+        return jobs.map(job=>({...normalize({job,
+          job_assignments:assignments.filter(row=>row.job_id===job.id),
+          job_time_entries:sessions.filter(row=>row.job_id===job.id)
+        }),detailLoaded:false}));
+      },
       assignments:id=>table('job_assignments',id), timeEntries:id=>table('job_time_entries',id),workDays:id=>table('job_work_days',id),
       materials:id=>table('job_materials',id),tests:id=>table('job_test_results',id),notes:id=>table('job_notes',id),photos:id=>table('job_photos',id),
       signoffs:id=>table('job_client_signoffs',id),activity:id=>table('job_activity',id),
@@ -302,8 +320,8 @@
       setEntitlement(companyId,value) { if(readOnly || getContext()?.platformAdmin!==true) fail('Platform administrator required','42501'); return client.from('companies').update({jobs_enabled:value===true}).eq('id',companyId).select('id,jobs_enabled').single(); }
     };
     // UI receives no write methods at all during read-only integration.
-    if(planning||execution||review)return Object.freeze(Object.fromEntries(['mode','list','detail','clear',...(planning?['directories','create','assign','replaceLead','unassign','schedule']:[]),...(execution?['workEligibility','start','finish','adminCloseSession']:[]),...(review?['submit','resubmit','returnCorrection','approve','cancel']:[])].map(key=>[key,api[key]]).concat([['capabilities',Object.freeze({planning,execution,review,mediaPersistence:false})]])));
-    return readOnly ? Object.freeze({mode:'supabase',list:api.list,detail:api.detail,clear:api.clear,capabilities:Object.freeze({readOnly:true,mediaPersistence:false})}) : api;
+    if(planning||execution||review)return Object.freeze(Object.fromEntries(['mode','list','dashboard','detail','clear',...(planning?['directories','create','assign','replaceLead','unassign','schedule']:[]),...(execution?['workEligibility','start','finish','adminCloseSession']:[]),...(review?['submit','resubmit','returnCorrection','approve','cancel']:[])].map(key=>[key,api[key]]).concat([['capabilities',Object.freeze({planning,execution,review,mediaPersistence:false})]])));
+    return readOnly ? Object.freeze({mode:'supabase',list:api.list,dashboard:api.dashboard,detail:api.detail,clear:api.clear,capabilities:Object.freeze({readOnly:true,mediaPersistence:false})}) : api;
   }
   // Preparation hook only: host explicitly mounts this in PLATFORM settings.
   // No handler/client is wired here, so it cannot update any company.
