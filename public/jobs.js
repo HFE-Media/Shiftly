@@ -716,6 +716,7 @@
   function fact(label, value) { return `<div class="jobsFact"><span>${label}</span><b>${h(value)}</b></div>`; }
 
   function workflowBar(job) {
+    if(!isMockMode && role==='admin' && activeTab!=='team-time')return '';
     if(!isMockMode) {
       const own=currentSession(job);
       if(canExecute(job))return `<div class="jobsActionBar"><div class="jobsActionCopy"><b>${own?'Active session':job.status==='in_progress'?'Paused — no own open session':'Job work'}</b><span>Job work time is separate from attendance.</span></div><div class="jobsActionButtons">${own&&job.status==='in_progress'?'<button class="platformBtn inline jobsBtn primary" data-action="execute-finish">Finish Work for Today</button>':!own&&['scheduled','in_progress','correction_required'].includes(job.status)?`<button class="platformBtn inline jobsBtn primary" data-action="execute-start">${job.status==='scheduled'?'Start Job':'Continue Job'}</button>`:''}</div></div>`;
@@ -757,6 +758,7 @@
 
   function reviewBar(job) {
     if(isMockMode)return '';
+    if(role==='admin' && activeTab!=='review')return '';
     // Keep the work editor focused; lifecycle review remains on Overview/Review.
     if(activeTab==='today')return '';
     const closed=['completed','cancelled'].includes(job.status);

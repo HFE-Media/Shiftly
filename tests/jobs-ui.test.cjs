@@ -106,7 +106,12 @@ async function harness(role='admin',host='localhost',appContext=null,client=null
     draftCount:()=>liveDrafts.size,generation:()=>contextGeneration,mutate:performAction,start:startJob,finish:finishWork,adapter:()=>liveAdapter,detail:()=>liveDetail,validate:validatePlanCreate,openPlanning,planningMutation,closeJobs,refreshRequired:()=>planningRefreshRequired};})();`);
   vm.runInContext(source,context);
   if(role!=='employee'&&host==='localhost') await (role==='supervisor'?window.ShiftlyJobs.openSupervisor():window.ShiftlyJobs.openAdmin());
-  const click=async selector=>{const el=window.document.querySelector(selector);assert.ok(el,`Missing ${selector}`);el.dispatchEvent(new window.Event('click',{bubbles:true}));await tick();};
+  const click=async selector=>{
+    // Workflow tests navigate to the action's new home before exercising it.
+    if(/data-action="(?:plan-team|plan-schedule|execute-recover)"/.test(selector)&&window.document.querySelector('[data-tab="team-time"]')){
+      window.document.querySelector('[data-tab="team-time"]').dispatchEvent(new window.Event('click',{bubbles:true}));await tick();
+    }
+    const el=window.document.querySelector(selector);assert.ok(el,`Missing ${selector}`);el.dispatchEvent(new window.Event('click',{bubbles:true}));await tick();};
   const submit=async values=>{const form=window.document.querySelector('#jobsModal form');assert.ok(form,'modal form');for(const [name,value] of Object.entries(values)){const el=form.querySelector(`[name="${name}"]`);assert.ok(el,name);if(el.tagName==='SELECT'){for(const option of el.querySelectorAll('option')) option.removeAttribute('selected');el.querySelector(`option[value="${value}"]`).selected=true;}else el.value=value;}form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await tick();};
   return {window,document:window.document,click,submit,changeContext(value){currentContext=value;window.dispatchEvent(new window.Event('shiftly:company-context'));}};
 }
@@ -630,8 +635,21 @@ test('late mutation from a closed workspace cannot replace a reopened same-compa
 });
 async function reviewHarness(role,client) {
   const h=await harness('admin','preview.invalid',{...liveCtx,role},client);
-  await h.window.ShiftlyJobs.openAdmin();await h.window.__jobsTest.loadLiveDetail(liveRow.id);return h;
+  await h.window.ShiftlyJobs.openAdmin();await h.window.__jobsTest.loadLiveDetail(liveRow.id);
+  if(['owner','admin'].includes(role))await h.click('[data-tab="review"]');return h;
 }
+test('Admin Overview is details-first; recovery and lifecycle retain separate tab homes',async()=>{
+  const h=await reviewHarness('admin',reviewClient({otherSession:true}));
+  await h.click('[data-tab="overview"]');
+  assert.equal(h.document.querySelector('.jobsLifecycleStrip'),null);
+  assert.equal(h.document.querySelector('[data-action="execute-recover"]'),null);
+  await h.click('[data-tab="team-time"]');
+  assert.ok(h.document.querySelector('[data-action="execute-recover"]'));
+  assert.equal(h.document.querySelector('.jobsLifecycleStrip'),null);
+  await h.click('[data-tab="review"]');
+  assert.ok(h.document.querySelector('.jobsLifecycleStrip'));
+  assert.equal(h.document.querySelector('[data-action="execute-recover"]'),null);
+});
 async function confirmReview(h,method,values={}) {
   await h.click(`[data-action="review-${method}"]`);h.document.querySelector('[name="confirmLifecycle"]').checked=true;await h.submit(values);
 }
@@ -679,7 +697,7 @@ test('correction, approval and cancellation require confirmation and required re
 test('cancel preserves Job and work history; open sessions cannot be cancelled or auto-closed',async()=>{
   const client=reviewClient(),h=await reviewHarness('admin',client);await confirmReview(h,'cancel',{reason:'Client cancelled'});
   assert.equal(client.model.calls.length,1);assert.equal(client.model.calls[0].name,'cancel_job');const job=h.window.__jobsTest.detail();assert.equal(job.id,liveRow.id);assert.equal(job.status,'cancelled');assert.equal(job.workDays.length,1);assert.equal(job.team.length,1);assert.equal(job.activity.at(-1).type,'cancelled');
-  assert.match(h.document.body.textContent,/Client cancelled/);assert.equal(h.document.querySelector('.jobsWorkspaceCard [data-action^="review-"]'),null);
+  await h.click('[data-tab="review"]');assert.match(h.document.body.textContent,/Client cancelled/);assert.equal(h.document.querySelector('.jobsWorkspaceCard [data-action^="review-"]'),null);
   const blocked=reviewClient({otherSession:true}),b=await reviewHarness('admin',blocked);assert.equal(b.document.querySelector('[data-action="review-cancel"]'),null);assert.equal(blocked.model.calls.length,0);
 });
 
