@@ -5,6 +5,11 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const {parseHTML}=require('linkedom');
 const crypto=require('node:crypto');
+test('printed job card excludes its app toolbar without hiding the paper',()=>{
+  const css=fs.readFileSync('public/jobs.css','utf8');
+  assert.match(css,/@media print\s*\{\s*body\.jobsPrinting \.jobsPrintPanel > \.jobsPanelHead\s*\{\s*display: none !important;/);
+  assert.match(css,/body\.jobsPrinting \.jobsPrintPanel\s*\{\s*display: block !important;/);
+});
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const liveCtx={userId:'u',companyId:'company-a',role:'admin',employeeId:'real-employee',jobsEnabled:true,version:1};
 const liveRow={id:'real-job',company_id:'company-a',job_number:'JC-2026-0100',title:'Stored work',client_name:'Stored client',company_name:'Stored company',lifecycle_status:'scheduled',revision:1,priority:'normal',updated_at:'2026-09-08T10:00:00Z'};
