@@ -297,6 +297,7 @@
   let modal;
   let devBar;
   let workspace;
+  let workRecordObserver;
   let allJobsWorkspace;
   let allJobsScroll = 0;
   let allJobsFocus;
@@ -688,6 +689,7 @@
   function supervisorJobRow(job, current) { const session = currentSession(job); return `<article class="jobsCompactRow jobsSupervisorRow ${current ? "current" : ""}"><button type="button" data-action="open" data-id="${job.id}"><div class="jobsCompactMain"><strong>${h(job.jobNumber)} · ${h(job.title)}</strong><span>${h(job.clientName)}</span><small>${h(job.site || job.serviceAddress)}${session ? ` · Started ${timeOnly(session.startedAt)} · ${duration(minutesBetween(session.startedAt))}` : ` · ${localDate(job.scheduledDate)}`}</small></div><div class="jobsCompactAction">${statusBadge(job)}<span>Open Job <i class="ph ph-arrow-right"></i></span></div></button></article>`; }
 
   function renderDetail() {
+    workRecordObserver?.disconnect();
     const job = selectedJob();
     if (!job) return render();
     const readOnly = !isMockMode || job.status === "completed" || role === "supervisor" && job.status === "submitted_for_review";
@@ -715,6 +717,19 @@
       const controls=document.createElement('div');
       controls.innerHTML=reviewBar(job);
       if(controls.firstElementChild)workspace.querySelector('.jobsReviewDecision').prepend(controls.firstElementChild);
+    }
+    const records=workspace.querySelector('.jobsDayListScrollable');
+    if(records) {
+      const sizeRecords=()=>{
+        const cards=[...records.children];
+        const height=cards.slice(0,2).reduce((sum,card)=>sum+card.getBoundingClientRect().height,0)+10;
+        if(height>10)records.style.maxHeight=`${height}px`;
+      };
+      sizeRecords();
+      if(typeof ResizeObserver!=='undefined') {
+        workRecordObserver=new ResizeObserver(sizeRecords);
+        [...records.children].slice(0,2).forEach(card=>workRecordObserver.observe(card));
+      }
     }
     workspace.querySelector(".jobsWorkspaceBody").scrollTop = previousScroll;
     if (focusedTab) workspace.querySelector('.jobsTab.active')?.focus({ preventScroll: true });
@@ -813,7 +828,7 @@
     return `${correction}<div class="jobsOverviewLayout"><section class="jobsOverviewMain"><h3 class="sectionLabel">Client request</h3><p class="jobsRequestText">${h(job.description)}</p><div class="jobsOverviewLocation"><h3 class="sectionLabel">Client & location</h3><strong>${h(job.clientName)}</strong><p>${h(job.site || "No linked site")}<br>${h(job.serviceAddress)}</p><p class="mutedText">${h(job.clientContactName)}<br>${h(job.clientPhone)} · ${h(job.clientEmail)}</p></div></section><aside class="jobsOverviewAside"><h3 class="sectionLabel">Planning & responsibility</h3><dl class="jobsMetadata">${metadata("Scheduled", scheduleLabel(job))}${metadata("Priority", job.priority)}${metadata("Lead supervisor", job.lead?.name || "Unassigned")}${metadata("Assigned team", job.team.map((person) => person.name).join(", "))}${metadata("Work recorded", `${job.workDays.length} days · ${job.sessions.length} sessions`)}${metadata("Last activity", localDateTime(job.lastActivity))}</dl></aside></div>`;
   }
   function metadata(label, value) { return `<div><dt>${h(label)}</dt><dd>${h(value)}</dd></div>`; }
-  function adminWorkTab(job) { return `${panel("Daily work record", "", workDaysMarkup(job))}<div class="jobsGroupedGrid">${materialsTab(job, true)}${testingTab(job, true)}${photosTab(job, true)}${notesTab(job, true)}</div>`; }
+  function adminWorkTab(job) { return `${panel("Daily work record", "", workDaysMarkup(job,true))}<div class="jobsGroupedGrid">${materialsTab(job, true)}${testingTab(job, true)}${photosTab(job, true)}${notesTab(job, true)}</div>`; }
   function adminTeamTimeTab(job) { return `${teamTab(job)}${timeTab(job)}`; }
   function adminReviewTab(job) {
     const submitted = [...job.activity].reverse().find((item) => ["submitted_for_review", "resubmitted"].includes(item.type));
@@ -856,9 +871,11 @@
   function initials(name) { return String(name || "?").split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase(); }
   function empty(icon, title, copy) { return `<div class="jobsEmpty"><i class="ph ph-${icon}"></i><b>${h(title)}</b><span>${h(copy)}</span></div>`; }
 
-  function workDaysMarkup(job) {
+  function workDaysMarkup(job,compact=false) {
     if (!job.workDays.length) return empty("calendar-blank", "No completed work days", "Finish Work for Today to preserve the first daily record.");
-    return `<div class="jobsDayList">${job.workDays.map((day, index) => {
+    const days=job.workDays.map((day,index)=>({day,index}));
+    if(compact)days.sort((a,b)=>String(b.day.date).localeCompare(String(a.day.date))||b.index-a.index);
+    return `<div class="jobsDayList${compact&&days.length>2?' jobsDayListScrollable':''}"${compact&&days.length>2?' tabindex="0" role="region" aria-label="Daily work records, newest first. Scroll for older records."':''}>${days.map(({day,index}) => {
       const sessions = day.sessionIds?.length
         ? job.sessions.filter((item) => day.sessionIds.includes(item.id))
         : job.sessions.filter((item) => item.startedAt.slice(0, 10) === day.date);
@@ -926,6 +943,7 @@
   }
 
   function closeJob() {
+    workRecordObserver?.disconnect();
     if (!isMockMode) { liveRequest++;liveDetail=null;selectedJobId=''; }
     if (!workspace) return;
     closeModal();
@@ -1319,6 +1337,7 @@
   }
 
   async function closeJobs(returnToHost=true) {
+    workRecordObserver?.disconnect();
     hostNavigationObserver?.disconnect();
     if (!isMockMode) { liveRequest++;liveAdapter?.clear();liveAdapter=null;liveDetail=null;state={jobs:[],sequence:0};directoryRequest++;directoryCache=null;liveDrafts.clear();liveWorkerActive=false;planningPending=false; }
     closeJob(); closeAllJobs(false);

@@ -786,6 +786,9 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 .jobsFieldCard span { font-size: 8px; }
 .jobsFieldCard p, .jobsFieldCard b { font-size: 10px; }
 .jobsDayCard { border-radius: 8px; }
+.jobsDayListScrollable { display: flex; flex-direction: column; gap: 10px; max-height: 430px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #665526 transparent; scrollbar-gutter: stable; }
+.jobsDayListScrollable > .jobsDayCard { flex: 0 0 auto; }
+.jobsDayListScrollable:focus-visible { outline: 2px solid var(--jobs-gold); outline-offset: 2px; }
 .jobsDayHead { padding: 10px 12px; }
 .jobsDayHead b { font-size: 10px; }
 .jobsDayHead span { font-size: 9px; }

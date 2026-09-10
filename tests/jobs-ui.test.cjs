@@ -720,6 +720,21 @@ test('Cancel Job lives in the collapsed menu after Job Card, not a lifecycle car
   assert.ok(h.document.querySelector('[name="confirmLifecycle"]'));
 });
 
+test('Daily work records show newest first in a two-record scroll region without changing history',async()=>{
+  const h=await reviewHarness('admin',reviewClient());
+  const job=h.window.__jobsTest.detail();
+  const base=job.workDays[0];
+  job.workDays=[{...base,date:'2026-09-08',work:'Oldest'},{...base,date:'2026-09-09',work:'Middle'},{...base,date:'2026-09-09',work:'Latest'}];
+  await h.click('[data-tab="work"]');
+  const list=h.document.querySelector('.jobsDayListScrollable');
+  assert.ok(list);assert.equal(list.children.length,3);assert.equal(list.getAttribute('tabindex'),'0');
+  assert.match(list.children[0].textContent,/Day 3.*Latest/s);
+  assert.match(list.children[2].textContent,/Day 1.*Oldest/s);
+  assert.equal(job.workDays[0].work,'Oldest');
+  await h.click('[data-tab="review"]');assert.ok(!h.document.querySelector('.jobsDayListScrollable'));
+  job.workDays=job.workDays.slice(0,2);await h.click('[data-tab="work"]');assert.ok(!h.document.querySelector('.jobsDayListScrollable'));
+});
+
 test('Admin Review contains only the approved Activity History disclosure',async()=>{
   const h=await reviewHarness('admin',reviewClient());
   const history=Array.from(h.document.querySelectorAll('.jobsWorkspaceCard summary')).filter(el=>el.textContent.includes('Activity history'));
