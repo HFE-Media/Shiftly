@@ -682,6 +682,13 @@ test('Admin Overview is details-first; recovery and lifecycle retain separate ta
 async function confirmReview(h,method,values={}) {
   await h.click(`[data-action="review-${method}"]`);h.document.querySelector('[name="confirmLifecycle"]').checked=true;await h.submit(values);
 }
+test('Admin Review contains only the approved Activity History disclosure',async()=>{
+  const h=await reviewHarness('admin',reviewClient());
+  const history=Array.from(h.document.querySelectorAll('.jobsWorkspaceCard summary')).filter(el=>el.textContent.includes('Activity history'));
+  assert.equal(history.length,1);
+  assert.ok(history[0].closest('.jobsReviewDecision'));
+  assert.equal(h.document.querySelector('.jobsLifecycleStrip details'),null);
+});
 
 test('Lead submission, manager correction, continued work, resubmission and completion preserve history',async()=>{
   const client=reviewClient();let h=await reviewHarness('supervisor',client);
