@@ -731,7 +731,13 @@ test('Daily work records show newest first in a two-record scroll region without
   assert.match(list.children[0].textContent,/Day 3.*Latest/s);
   assert.match(list.children[2].textContent,/Day 1.*Oldest/s);
   assert.equal(job.workDays[0].work,'Oldest');
-  await h.click('[data-tab="review"]');assert.ok(!h.document.querySelector('.jobsDayListScrollable'));
+  await h.click('[data-tab="review"]');
+  const reviewList=h.document.querySelector('.jobsDayListScrollable');
+  assert.equal(reviewList.dataset.visibleRecords,'1');
+  assert.match(reviewList.children[0].textContent,/Day 3.*Latest/s);
+  assert.equal(reviewList.children.length,3);
+  assert.equal(reviewList.previousElementSibling.textContent,'Daily work records');
+  assert.match(h.document.querySelector('.jobsReviewCounts').textContent,/3 work days.*team time.*team members/);
   job.workDays=job.workDays.slice(0,2);await h.click('[data-tab="work"]');assert.ok(!h.document.querySelector('.jobsDayListScrollable'));
 });
 

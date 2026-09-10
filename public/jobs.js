@@ -720,15 +720,16 @@
     }
     const records=workspace.querySelector('.jobsDayListScrollable');
     if(records) {
+      const visibleCount=Number(records.dataset.visibleRecords)||2;
       const sizeRecords=()=>{
         const cards=[...records.children];
-        const height=cards.slice(0,2).reduce((sum,card)=>sum+card.getBoundingClientRect().height,0)+10;
+        const height=cards.slice(0,visibleCount).reduce((sum,card)=>sum+card.getBoundingClientRect().height,0)+(visibleCount-1)*10;
         if(height>10)records.style.maxHeight=`${height}px`;
       };
       sizeRecords();
       if(typeof ResizeObserver!=='undefined') {
         workRecordObserver=new ResizeObserver(sizeRecords);
-        [...records.children].slice(0,2).forEach(card=>workRecordObserver.observe(card));
+        [...records.children].slice(0,visibleCount).forEach(card=>workRecordObserver.observe(card));
       }
     }
     workspace.querySelector(".jobsWorkspaceBody").scrollTop = previousScroll;
@@ -832,7 +833,7 @@
   function adminTeamTimeTab(job) { return `${teamTab(job)}${timeTab(job)}`; }
   function adminReviewTab(job) {
     const submitted = [...job.activity].reverse().find((item) => ["submitted_for_review", "resubmitted"].includes(item.type));
-    return `<div class="jobsReviewLayout"><section class="jobsReviewEvidence"><h3 class="sectionLabel">Request & outcome</h3><p class="jobsRequestText">${h(job.description)}</p><div class="jobsReviewCounts"><span><b>${job.workDays.length}</b> work days</span><span><b>${duration(totalMinutes(job))}</b> team time</span><span><b>${job.team.length}</b> team members</span></div>${workDaysMarkup(job)}<details class="jobsEvidenceDisclosure"><summary>Materials, results & photos <span>${job.materials.length} · ${job.testing.length} · ${job.photos.length}</span></summary><div class="jobsEvidenceBody">${materialsTab(job, true)}${testingTab(job, true)}${photosTab(job, true)}${notesTab(job, true)}</div></details><details class="jobsEvidenceDisclosure"><summary>Team & work sessions</summary><div class="jobsEvidenceBody">${adminTeamTimeTab(job)}</div></details></section><aside class="jobsReviewDecision">${signoffTab(job, true)}<dl class="jobsMetadata">${metadata("Submitted", submitted ? `${submitted.actor} · ${localDateTime(submitted.at)}` : "Not submitted")}${job.correctionReason ? metadata("Correction requested", job.correctionReason) : ""}</dl>${workflowBar(job)}<details class="jobsEvidenceDisclosure"><summary>Activity history <span>${job.activity.length}</span></summary><div class="jobsTimeline">${job.activity.slice().reverse().map((item) => timeline(item.actor, item.summary, item.at)).join("")}</div></details></aside></div>`;
+    return `<div class="jobsReviewLayout"><section class="jobsReviewEvidence"><h3 class="sectionLabel">Request & outcome</h3><p class="jobsRequestText">${h(job.description)}</p><div class="jobsReviewCounts"><span><b>${job.workDays.length}</b> work days</span><span><b>${duration(totalMinutes(job))}</b> team time</span><span><b>${job.team.length}</b> team members</span></div><h3 class="sectionLabel">Daily work records</h3>${workDaysMarkup(job,1)}<details class="jobsEvidenceDisclosure"><summary>Materials, results & photos <span>${job.materials.length} · ${job.testing.length} · ${job.photos.length}</span></summary><div class="jobsEvidenceBody">${materialsTab(job, true)}${testingTab(job, true)}${photosTab(job, true)}${notesTab(job, true)}</div></details><details class="jobsEvidenceDisclosure"><summary>Team & work sessions</summary><div class="jobsEvidenceBody">${adminTeamTimeTab(job)}</div></details></section><aside class="jobsReviewDecision">${signoffTab(job, true)}<dl class="jobsMetadata">${metadata("Submitted", submitted ? `${submitted.actor} · ${localDateTime(submitted.at)}` : "Not submitted")}${job.correctionReason ? metadata("Correction requested", job.correctionReason) : ""}</dl>${workflowBar(job)}<details class="jobsEvidenceDisclosure"><summary>Activity history <span>${job.activity.length}</span></summary><div class="jobsTimeline">${job.activity.slice().reverse().map((item) => timeline(item.actor, item.summary, item.at)).join("")}</div></details></aside></div>`;
   }
   function supervisorOverviewTab(job) { const correction = job.status === "correction_required" ? `<div class="jobsReviewBanner correction"><b>Correction required</b><p>${h(job.correctionReason)}</p></div>` : ""; return `${correction}${panel("Job details", "", `<div class="jobsDetailGrid">${field("Client", job.clientName)}${field("Scheduled", scheduleLabel(job))}${field("Site / address", `${job.site || ""}\n${job.serviceAddress}`)}${field("Team", job.team.map((person) => person.name).join(", "))}</div>`)}${panel("Client request", "", `<div class="jobsFieldCard"><p>${h(job.description)}</p></div>`)}`; }
   function supervisorRecordsTab(job) { return panel("Job records", "Completed daily work, newest last.", workDaysMarkup(job)); }
@@ -872,10 +873,11 @@
   function empty(icon, title, copy) { return `<div class="jobsEmpty"><i class="ph ph-${icon}"></i><b>${h(title)}</b><span>${h(copy)}</span></div>`; }
 
   function workDaysMarkup(job,compact=false) {
+    const visibleCount=compact===true?2:Number(compact);
     if (!job.workDays.length) return empty("calendar-blank", "No completed work days", "Finish Work for Today to preserve the first daily record.");
     const days=job.workDays.map((day,index)=>({day,index}));
     if(compact)days.sort((a,b)=>String(b.day.date).localeCompare(String(a.day.date))||b.index-a.index);
-    return `<div class="jobsDayList${compact&&days.length>2?' jobsDayListScrollable':''}"${compact&&days.length>2?' tabindex="0" role="region" aria-label="Daily work records, newest first. Scroll for older records."':''}>${days.map(({day,index}) => {
+    return `<div class="jobsDayList${compact&&days.length>visibleCount?' jobsDayListScrollable':''}" data-visible-records="${visibleCount}"${compact&&days.length>visibleCount?' tabindex="0" role="region" aria-label="Daily work records, newest first. Scroll for older records."':''}>${days.map(({day,index}) => {
       const sessions = day.sessionIds?.length
         ? job.sessions.filter((item) => day.sessionIds.includes(item.id))
         : job.sessions.filter((item) => item.startedAt.slice(0, 10) === day.date);
