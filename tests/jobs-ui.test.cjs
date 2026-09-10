@@ -138,6 +138,17 @@ async function harness(role='admin',host='localhost',appContext=null,client=null
   const submit=async values=>{const form=window.document.querySelector('#jobsModal form');assert.ok(form,'modal form');for(const [name,value] of Object.entries(values)){const el=form.querySelector(`[name="${name}"]`);assert.ok(el,name);if(el.tagName==='SELECT'){for(const option of el.querySelectorAll('option')) option.removeAttribute('selected');el.querySelector(`option[value="${value}"]`).selected=true;}else el.value=value;}form.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await tick();};
   return {window,document:window.document,click,submit,changeContext(value){currentContext=value;window.dispatchEvent(new window.Event('shiftly:company-context'));}};
 }
+test('All Jobs filters use a compact disclosure and close after selecting',async()=>{
+  const h=await harness();await h.click('[data-action="all-jobs"]');
+  const menu=h.document.querySelector('.jobsFilterMenu');assert.ok(menu);assert.equal(menu.hasAttribute('open'),false);
+  assert.equal(menu.querySelectorAll('[data-action="filter"]').length,7);
+  menu.setAttribute('open','');await h.click('[data-filter="scheduled"]');
+  assert.equal(h.document.querySelector('.jobsFilterMenu').hasAttribute('open'),false);
+  assert.ok(h.document.querySelector('.jobsFilterMenu summary.active'));
+  assert.equal(h.document.querySelector('.jobsFilterMenu [data-filter="scheduled"]').getAttribute('aria-selected'),'true');
+  assert.ok(h.document.querySelector('#jobsSearch'));
+});
+
 test('Admin dashboard, All Jobs, modal and Job Card render through adapter',async()=>{
   const h=await harness();
   assert.match(h.document.body.textContent,/Active Jobs/);

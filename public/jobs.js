@@ -622,7 +622,7 @@
     }
     allJobsWorkspace.innerHTML = `<div class="jobsWorkspaceCard jobsAllJobsCard" role="dialog" aria-modal="true" aria-labelledby="jobsAllJobsTitle" tabindex="-1">
       <header class="jobsWorkspaceHead"><div class="jobsWorkspaceIdentity"><h2 id="jobsAllJobsTitle">All Jobs</h2><div class="mutedText">Find and manage company Jobs.</div></div><button class="jobsIconBtn" type="button" data-action="all-jobs-close" aria-label="Close All Jobs"><i class="ph ph-x"></i></button></header>
-      <div class="jobsAllJobsBody"><div class="jobsAllJobsTools"><label class="jobsSearchWrap jobsAllJobsSearch"><i class="ph ph-magnifying-glass"></i><span class="srOnly">Search Jobs</span><input id="jobsSearch" class="jobsSearch platformInput" type="search" value="${h(adminSearch)}" placeholder="Search jobs..." autocomplete="off"/></label><div class="jobsFilters" role="tablist" aria-label="Filter All Jobs">${filterButtons()}</div><span class="statusPill jobsResultCount">${jobs.length} ${jobs.length === 1 ? "result" : "results"}</span></div>
+      <div class="jobsAllJobsBody"><div class="jobsAllJobsTools"><label class="jobsSearchWrap jobsAllJobsSearch"><i class="ph ph-magnifying-glass"></i><span class="srOnly">Search Jobs</span><input id="jobsSearch" class="jobsSearch platformInput" type="search" value="${h(adminSearch)}" placeholder="Search jobs..." autocomplete="off"/></label><details class="jobsFilterMenu"><summary aria-label="Filter jobs" title="Filter jobs" class="${adminFilter!=='all'?'active':''}"><i class="ph ph-sliders-horizontal" aria-hidden="true"></i></summary><div class="jobsFilters" role="tablist" aria-label="Filter All Jobs" aria-orientation="vertical">${filterButtons()}</div></details><span class="statusPill jobsResultCount" aria-live="polite">${jobs.length} ${jobs.length === 1 ? "result" : "results"}</span></div>
       <div class="jobsAllJobsResults">${jobs.length ? `<div class="jobsTableWrap">${jobsTable(jobs)}</div><div class="jobsMobileList jobsAllJobsMobile">${jobs.map((job) => compactJobRow(job, job.status === "submitted_for_review")).join("")}</div>` : `<div class="jobsAllJobsEmpty">${empty("magnifying-glass", "No matching Jobs", "Try another search or status filter.")}</div>`}</div></div></div>`;
     const body = allJobsWorkspace.querySelector(".jobsAllJobsBody");
     body.scrollTop = previousScroll;
@@ -1431,6 +1431,8 @@
     modal.addEventListener("input", (event) => { if (event.target.id !== "jobsTeamSearch") return; const query = event.target.value.trim().toLowerCase(); modal.querySelectorAll("[data-team-option]").forEach((option) => { option.hidden = !!query && !option.dataset.teamOption.includes(query); }); });
     document.addEventListener('click',event=>{
       const menu=workspace?.querySelector('.jobsMoreActions[open]');
+      const filters=allJobsWorkspace?.querySelector('.jobsFilterMenu[open]');
+      if(filters&&!filters.contains(event.target))filters.removeAttribute('open');
       if(menu && (!menu.contains(event.target)||event.target.closest('[data-action="review-cancel"]')))menu.removeAttribute('open');
     });
     document.addEventListener("keydown", (event) => {
@@ -1438,6 +1440,7 @@
         if (!modal.hidden) { event.preventDefault(); closeModal(); }
         else if (workspace?.querySelector('.jobsMoreActions[open]')) { event.preventDefault(); const menu=workspace.querySelector('.jobsMoreActions');menu.removeAttribute('open');menu.querySelector('summary').focus(); }
         else if (workspace) { event.preventDefault(); closeJob(); }
+        else if (allJobsWorkspace?.querySelector('.jobsFilterMenu[open]')) { event.preventDefault(); const filters=allJobsWorkspace.querySelector('.jobsFilterMenu');filters.removeAttribute('open');filters.querySelector('summary').focus(); }
         else if (allJobsWorkspace) { event.preventDefault(); closeAllJobs(); }
       }
       const dialog = !modal.hidden ? modal : workspace || allJobsWorkspace;
@@ -1482,7 +1485,7 @@
     if (action === "all-jobs-close") return closeAllJobs();
     if (action === "create") return createJobModal();
     if (action === "open") return openJob(button.dataset.id);
-    if (action === "filter") { adminFilter = button.dataset.filter; renderAllJobs(); allJobsWorkspace?.querySelector('.jobsFilter[aria-selected="true"]')?.focus({ preventScroll: true }); return; }
+    if (action === "filter") { adminFilter = button.dataset.filter; renderAllJobs(); allJobsWorkspace?.querySelector('.jobsFilterMenu summary')?.focus({ preventScroll: true }); return; }
     if (action === "tab") {
       activeTab = button.dataset.tab;
       if (workspace) workspace.querySelector('.jobsWorkspaceBody').scrollTop = 0;
