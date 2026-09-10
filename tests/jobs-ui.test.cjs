@@ -5,6 +5,15 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const {parseHTML}=require('linkedom');
 const crypto=require('node:crypto');
+test('job card print restores desktop columns and avoids doubled page padding',()=>{
+  const css=fs.readFileSync('public/jobs.css','utf8');
+  const print=css.slice(css.lastIndexOf('@media print'));
+  assert.match(print,/\.jobsPaperHead \{ display: flex; flex-direction: row/);
+  assert.match(print,/\.jobsPaperNumber \{ text-align: right/);
+  assert.match(print,/\.jobsPaperGrid \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(print,/\.jobsJobCardPaper \{[^}]*padding: 0/);
+  assert.match(print,/@page jobsCard/);
+});
 test('printed job card excludes its app toolbar without hiding the paper',()=>{
   const css=fs.readFileSync('public/jobs.css','utf8');
   assert.match(css,/@media print\s*\{\s*body\.jobsPrinting \.jobsPrintPanel > \.jobsPanelHead\s*\{\s*display: none !important;/);

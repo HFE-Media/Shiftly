@@ -1005,6 +1005,16 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 }
 @media print {
   body.jobsPrinting .jobsPrintPanel > .jobsPanelHead { display: none !important; }
+  /* Paper must retain the approved desktop layout, regardless of preview width. */
+  @page jobsCard { size: A4 portrait; margin: 12mm; }
+  body.jobsPrinting { page: jobsCard; }
+  body.jobsPrinting .jobsJobCardPaper { width: 100%; max-width: none; min-height: 0; padding: 0; margin: 0; box-sizing: border-box; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  body.jobsPrinting .jobsPaperHead { display: flex; flex-direction: row; justify-content: space-between; align-items: flex-start; gap: 24px; break-inside: avoid; }
+  body.jobsPrinting .jobsPaperNumber { text-align: right; flex-shrink: 0; }
+  body.jobsPrinting .jobsPaperGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; break-inside: avoid; }
+  body.jobsPrinting .jobsPaperSection h3 { break-after: avoid; }
+  body.jobsPrinting .jobsPaperTable tr { break-inside: avoid; }
+  body.jobsPrinting .jobsPaperTable thead { display: table-header-group; }
   body.jobsPrinting #jobsRoot > .jobsApp { display: none !important; }
   body.jobsPrinting .jobsWorkspaceOverlay { position: static; display: block; background: white; backdrop-filter: none; }
   body.jobsPrinting .jobsWorkspaceCard, body.jobsPrinting .jobsWorkspaceBody { display: block; width: 100%; height: auto; overflow: visible; border: 0; box-shadow: none; }
