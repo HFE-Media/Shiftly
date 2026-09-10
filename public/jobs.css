@@ -999,6 +999,9 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 }
 @media (max-width: 700px) {
   .jobsMoreActions { display: none; }
+  .jobsSupervisorRow > button { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .jobsSupervisorRow .jobsCompactAction { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; }
+  .jobsSupervisorRow .jobsCompactAction > span:last-child { margin-top: 0; margin-left: auto; white-space: nowrap; }
   .jobsWorkspaceCard { width: calc(100% - 12px); height: calc(100dvh - 12px); border-radius: 12px; }
   .jobsWorkspaceHead { padding: 12px; gap: 8px; }
   .jobsWorkspaceHead h2 { font-size: 14px; }
