@@ -993,6 +993,7 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
   .jobsAllJobsMobile { display: grid; }
 }
 @media (max-width: 700px) {
+  .jobsMoreActions { display: none; }
   .jobsWorkspaceCard { width: calc(100% - 12px); height: calc(100dvh - 12px); border-radius: 12px; }
   .jobsWorkspaceHead { padding: 12px; gap: 8px; }
   .jobsWorkspaceHead h2 { font-size: 14px; }

@@ -5,6 +5,10 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const {parseHTML}=require('linkedom');
 const crypto=require('node:crypto');
+test('job actions menu is hidden at the workspace mobile breakpoint',()=>{
+  const css=fs.readFileSync('public/jobs.css','utf8');
+  assert.match(css,/@media \(max-width: 700px\)\s*\{\s*\.jobsMoreActions\s*\{\s*display: none;/);
+});
 test('job card print restores desktop columns and avoids doubled page padding',()=>{
   const css=fs.readFileSync('public/jobs.css','utf8');
   const print=css.slice(css.lastIndexOf('@media print'));
