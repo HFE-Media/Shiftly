@@ -676,12 +676,30 @@ test('Admin Overview is details-first; recovery and lifecycle retain separate ta
   assert.ok(h.document.querySelector('[data-action="execute-recover"]'));
   assert.equal(h.document.querySelector('.jobsLifecycleStrip'),null);
   await h.click('[data-tab="review"]');
-  assert.ok(h.document.querySelector('.jobsLifecycleStrip'));
+  assert.ok(!h.document.querySelector('.jobsLifecycleStrip'));
+  assert.match(h.document.querySelector('.jobsReviewDecision').textContent,/Finish open work sessions/);
   assert.equal(h.document.querySelector('[data-action="execute-recover"]'),null);
 });
 async function confirmReview(h,method,values={}) {
   await h.click(`[data-action="review-${method}"]`);h.document.querySelector('[name="confirmLifecycle"]').checked=true;await h.submit(values);
 }
+test('Cancel Job lives in the collapsed menu after Job Card, not a lifecycle card',async()=>{
+  const h=await reviewHarness('admin',reviewClient());
+  const menu=h.document.querySelector('.jobsMoreActions');
+  assert.ok(menu);
+  assert.equal(menu.hasAttribute('open'),false);
+  assert.equal(menu.previousElementSibling.dataset.tab,'card');
+  assert.ok(menu.querySelector('[data-action="review-cancel"]'));
+  assert.ok(!h.document.querySelector('.jobsLifecycleStrip'));
+  assert.ok(!h.document.querySelector('.jobsReviewDecision [data-action="review-cancel"]'));
+  menu.setAttribute('open','');
+  const escape=new h.window.Event('keydown',{bubbles:true});escape.key='Escape';menu.dispatchEvent(escape);
+  assert.equal(menu.hasAttribute('open'),false);
+  assert.ok(h.document.querySelector('#jobsWorkspaceTitle'));
+  await h.click('[data-action="review-cancel"]');
+  assert.ok(h.document.querySelector('[name="confirmLifecycle"]'));
+});
+
 test('Admin Review contains only the approved Activity History disclosure',async()=>{
   const h=await reviewHarness('admin',reviewClient());
   const history=Array.from(h.document.querySelectorAll('.jobsWorkspaceCard summary')).filter(el=>el.textContent.includes('Activity history'));

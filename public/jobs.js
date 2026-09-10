@@ -705,9 +705,17 @@
     workspace.innerHTML = `<div class="jobsWorkspaceCard" role="dialog" aria-modal="true" aria-labelledby="jobsWorkspaceTitle" tabindex="-1">
       <header class="jobsWorkspaceHead"><div class="jobsWorkspaceIdentity"><h2 id="jobsWorkspaceTitle">${h(job.jobNumber)} · ${h(job.title)}</h2><div class="mutedText">${h(job.clientName)} · ${h(job.site || job.serviceAddress)}</div><div class="jobsWorkspaceContext">${statusBadge(job)}<span>Lead <b>${h(job.lead?.name || "Unassigned")}</b></span><span>Team <b>${job.team.length}</b></span><span>Total time <b>${duration(totalMinutes(job))}</b></span></div></div><button class="jobsIconBtn" type="button" data-action="dashboard" aria-label="Close Job"><i class="ph ph-x"></i></button></header>
       <nav class="jobsTabs" role="tablist" aria-label="Job details">${visibleTabs.map(([id, label]) => `<button class="jobsTab ${activeTab === id ? "active" : ""}" type="button" role="tab" aria-selected="${activeTab === id}" data-action="tab" data-tab="${id}">${label}</button>`).join("")}</nav>
-      <div class="jobsWorkspaceBody"><div class="jobsWorkspaceContent">${reviewBar(job)}
+      ${!isMockMode && reviewAllowed('cancel',job) ? '<details class="jobsMoreActions"><summary aria-label="More job actions" title="More job actions">⋯</summary><div><button type="button" class="jobsBtn danger" data-action="review-cancel">Cancel Job</button></div></details>' : ''}
+      <div class="jobsWorkspaceBody"><div class="jobsWorkspaceContent">${role==='admin'?'':reviewBar(job)}
       ${(canPlan() || role === "supervisor") && (!isMockMode || !(activeTab === "today" && currentSession(job))) ? workflowBar(job) : ""}
       <section id="jobsTabPanel" role="tabpanel">${renderTab(job, activeTab, readOnly)}</section></div></div></div>`;
+    const moreActions=workspace.querySelector('.jobsMoreActions');
+    if(moreActions)workspace.querySelector('.jobsTabs').appendChild(moreActions);
+    if(role==='admin' && activeTab==='review') {
+      const controls=document.createElement('div');
+      controls.innerHTML=reviewBar(job);
+      if(controls.firstElementChild)workspace.querySelector('.jobsReviewDecision').prepend(controls.firstElementChild);
+    }
     workspace.querySelector(".jobsWorkspaceBody").scrollTop = previousScroll;
     if (focusedTab) workspace.querySelector('.jobsTab.active')?.focus({ preventScroll: true });
   }
@@ -769,10 +777,10 @@
     if(reviewAllowed(method,job))buttons.push(action(method,method==='resubmit'?'Resubmit for Review':'Submit for Review'));
     if(reviewAllowed('returnCorrection',job))buttons.push(action('returnCorrection','Return for Correction'));
     if(reviewAllowed('approve',job))buttons.push(action('approve','Approve & Complete'));
-    if(reviewAllowed('cancel',job))buttons.push(action('cancel','Cancel Job'));
     const blockers=!closed&&(isLead(job)||canPlan())&&openSessions(job).length?`<p>Finish open work sessions before submission, approval or cancellation: ${openSessions(job).map(s=>`${h(s.employeeName||s.employeeId)} — started ${h(localDateTime(s.startedAt))}`).join('; ')}. Sessions are never closed automatically.</p>`:'';
     const correction=job.correctionReason?`<p><b>Correction required:</b> ${h(job.correctionReason)}</p>`:'';
     const cancellation=job.cancelReason?`<p><b>Cancellation reason:</b> ${h(job.cancelReason)}</p>`:'';
+    if(role==='admin')return buttons.length||correction||cancellation||blockers?`<div class="jobsReviewControls">${correction}${cancellation}${blockers}${buttons.length?`<div class="jobsActionButtons">${buttons.join('')}</div>`:''}</div>`:'';
     return `<section class="jobsReviewBanner jobsLifecycleStrip"><b>${closed?'Historical Job — read-only':job.status==='submitted_for_review'?'Awaiting manager review':'Job lifecycle'}</b>${correction}${cancellation}${blockers}${!closed&&isLead(job)&&!job.workDays.some(d=>d.work?.trim())?'<p>Record work before submitting for review.</p>':''}<div class="jobsActionButtons">${buttons.join('')}</div>${role==='admin'?'':`<details class="jobsEvidenceDisclosure"><summary>Activity history</summary><div class="jobsTimeline">${job.activity.slice().reverse().map(a=>timeline(a.actor,a.summary,a.at)).join('')||'<p>No activity returned.</p>'}</div></details>`}</section>`;
   }
 
@@ -1396,9 +1404,14 @@
     modal.addEventListener('click',event=>{if(event.target.closest('[data-plan-refresh]'))refreshPlanning();});
     modal.addEventListener('change',event=>{if(['lead','team'].includes(event.target.name))syncCreateLead();});
     modal.addEventListener("input", (event) => { if (event.target.id !== "jobsTeamSearch") return; const query = event.target.value.trim().toLowerCase(); modal.querySelectorAll("[data-team-option]").forEach((option) => { option.hidden = !!query && !option.dataset.teamOption.includes(query); }); });
+    document.addEventListener('click',event=>{
+      const menu=workspace?.querySelector('.jobsMoreActions[open]');
+      if(menu && (!menu.contains(event.target)||event.target.closest('[data-action="review-cancel"]')))menu.removeAttribute('open');
+    });
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         if (!modal.hidden) { event.preventDefault(); closeModal(); }
+        else if (workspace?.querySelector('.jobsMoreActions[open]')) { event.preventDefault(); const menu=workspace.querySelector('.jobsMoreActions');menu.removeAttribute('open');menu.querySelector('summary').focus(); }
         else if (workspace) { event.preventDefault(); closeJob(); }
         else if (allJobsWorkspace) { event.preventDefault(); closeAllJobs(); }
       }

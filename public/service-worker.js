@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v228"; // Coordinated Jobs spacing and navigation assets; caching strategy unchanged
+const CACHE_NAME = "shiftly-v229"; // Coordinated Jobs actions menu assets; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -15,8 +15,8 @@ const ASSETS = [
   "/config.js",
   "/app.js",
   "/app.js?v=196",
-  "/jobs.js?v=19",
-  "/jobs.css?v=16",
+  "/jobs.js?v=20",
+  "/jobs.css?v=17",
   "/jobs-data.js?v=5",
   "/manifest.json",
   "/icons/shiftly-favicon-32.png",

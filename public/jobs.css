@@ -931,6 +931,15 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
 .jobsWorkspaceContent { width: 100%; box-sizing: border-box; margin: 0 auto; padding: 22px; }
 .jobsWorkspaceCard > .jobsTabs { flex-shrink: 0; display: flex; flex-wrap: wrap; margin: 0; padding: 6px 22px; border: 0; border-bottom: 1px solid var(--jobs-line); border-radius: 0; background: rgba(255,255,255,.018); }
 .jobsWorkspaceCard > .jobsTabs .jobsTab { flex: 0 1 auto; min-height: 40px; padding: 9px 16px; font-size: 12px; }
+.jobsMoreActions { position: relative; align-self: center; }
+.jobsMoreActions > summary { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; list-style: none; cursor: pointer; border-radius: 6px; font-size: 24px; }
+.jobsMoreActions > summary::-webkit-details-marker { display: none; }
+.jobsMoreActions > summary:hover, .jobsMoreActions[open] > summary { background: rgba(212,175,55,.1); }
+.jobsMoreActions > summary:focus-visible { outline: 2px solid var(--jobs-gold, #d4af37); outline-offset: 2px; }
+.jobsMoreActions > div { position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: 150px; padding: 6px; border: 1px solid var(--jobs-line); border-radius: 8px; background: #151515; box-shadow: 0 8px 24px #0008; }
+.jobsMoreActions .jobsBtn { width: 100%; min-height: 40px; background: transparent; border: 0; color: #f0a5ad; text-align: left; }
+.jobsReviewControls { margin-bottom: 16px; font-size: 12px; color: var(--jobs-muted); }
+.jobsReviewControls p { margin: 0 0 10px; }
 .jobsOverviewLayout, .jobsReviewLayout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 26px; }
 .jobsOverviewAside, .jobsReviewDecision { min-width: 0; padding-left: 22px; border-left: 1px solid var(--jobs-line); }
 .jobsOverviewMain, .jobsReviewEvidence { min-width: 0; }
