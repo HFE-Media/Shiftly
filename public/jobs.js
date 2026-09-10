@@ -708,8 +708,8 @@
       <header class="jobsWorkspaceHead"><div class="jobsWorkspaceIdentity"><h2 id="jobsWorkspaceTitle">${h(job.jobNumber)} · ${h(job.title)}</h2><div class="mutedText">${h(job.clientName)} · ${h(job.site || job.serviceAddress)}</div><div class="jobsWorkspaceContext">${statusBadge(job)}<span>Lead <b>${h(job.lead?.name || "Unassigned")}</b></span><span>Team <b>${job.team.length}</b></span><span>Total time <b>${duration(totalMinutes(job))}</b></span></div></div><button class="jobsIconBtn" type="button" data-action="dashboard" aria-label="Close Job"><i class="ph ph-x"></i></button></header>
       <nav class="jobsTabs" role="tablist" aria-label="Job details">${visibleTabs.map(([id, label]) => `<button class="jobsTab ${activeTab === id ? "active" : ""}" type="button" role="tab" aria-selected="${activeTab === id}" data-action="tab" data-tab="${id}">${label}</button>`).join("")}</nav>
       ${!isMockMode && reviewAllowed('cancel',job) ? '<details class="jobsMoreActions"><summary aria-label="More job actions" title="More job actions">⋯</summary><div><button type="button" class="jobsBtn danger" data-action="review-cancel">Cancel Job</button></div></details>' : ''}
-      <div class="jobsWorkspaceBody"><div class="jobsWorkspaceContent">${role==='admin'?'':reviewBar(job)}
-      ${(canPlan() || role === "supervisor") && (!isMockMode || !(activeTab === "today" && currentSession(job))) ? workflowBar(job) : ""}
+      <div class="jobsWorkspaceBody"><div class="jobsWorkspaceContent">
+      ${(canPlan() || isMockMode && role === "supervisor") && (!isMockMode || !(activeTab === "today" && currentSession(job))) ? workflowBar(job) : ""}
       <section id="jobsTabPanel" role="tabpanel">${renderTab(job, activeTab, readOnly)}</section></div></div></div>`;
     const moreActions=workspace.querySelector('.jobsMoreActions');
     if(moreActions)workspace.querySelector('.jobsTabs').appendChild(moreActions);
@@ -785,7 +785,7 @@
     if(isMockMode)return '';
     if(role==='admin' && activeTab!=='review')return '';
     // Keep the work editor focused; lifecycle review remains on Overview/Review.
-    if(activeTab==='today')return '';
+    if(role==='supervisor' && activeTab!=='signoff')return '';
     const closed=['completed','cancelled'].includes(job.status);
     const buttons=[];
     const action=(method,label)=>`<button class="platformBtn inline jobsBtn ${method==='approve'?'success':method==='cancel'?'danger':'secondary'}" data-action="review-${method}">${label}</button>`;
@@ -797,7 +797,7 @@
     const correction=job.correctionReason?`<p><b>Correction required:</b> ${h(job.correctionReason)}</p>`:'';
     const cancellation=job.cancelReason?`<p><b>Cancellation reason:</b> ${h(job.cancelReason)}</p>`:'';
     if(role==='admin')return buttons.length||correction||cancellation||blockers?`<div class="jobsReviewControls">${correction}${cancellation}${blockers}${buttons.length?`<div class="jobsActionButtons">${buttons.join('')}</div>`:''}</div>`:'';
-    return `<section class="jobsReviewBanner jobsLifecycleStrip"><b>${closed?'Historical Job — read-only':job.status==='submitted_for_review'?'Awaiting manager review':'Job lifecycle'}</b>${correction}${cancellation}${blockers}${!closed&&isLead(job)&&!job.workDays.some(d=>d.work?.trim())?'<p>Record work before submitting for review.</p>':''}<div class="jobsActionButtons">${buttons.join('')}</div>${role==='admin'?'':`<details class="jobsEvidenceDisclosure"><summary>Activity history</summary><div class="jobsTimeline">${job.activity.slice().reverse().map(a=>timeline(a.actor,a.summary,a.at)).join('')||'<p>No activity returned.</p>'}</div></details>`}</section>`;
+    return panel('Submit for review','',`<div class="jobsReviewControls">${closed?'<p>Historical Job — read-only.</p>':job.status==='submitted_for_review'?'<p>Awaiting manager review.</p>':''}${correction}${cancellation}${blockers}${!closed&&isLead(job)&&!job.workDays.some(d=>d.work?.trim())?'<p>Record work before submitting for review.</p>':''}${buttons.length?`<div class="jobsActionButtons">${buttons.join('')}</div>`:''}</div>`);
   }
 
   function openReview(method) {
@@ -818,7 +818,7 @@
       const renderers = { overview: adminOverviewTab, work: adminWorkTab, "team-time": adminTeamTimeTab, review: adminReviewTab, card: jobCardTab };
       return (renderers[tab] || adminOverviewTab)(job, readOnly);
     }
-    const renderers = { overview: supervisorOverviewTab, today: todayWorkTab, records: supervisorRecordsTab, signoff: signoffTab, card: jobCardTab };
+    const renderers = { overview: supervisorOverviewTab, today: todayWorkTab, records: supervisorRecordsTab, signoff: (job,readOnly)=>`${signoffTab(job,readOnly)}${reviewBar(job)}`, card: jobCardTab };
     return (renderers[tab] || supervisorOverviewTab)(job, readOnly);
   }
 
@@ -836,7 +836,7 @@
     return `<div class="jobsReviewLayout"><section class="jobsReviewEvidence"><h3 class="sectionLabel">Request & outcome</h3><p class="jobsRequestText">${h(job.description)}</p><div class="jobsReviewCounts"><span><b>${job.workDays.length}</b> work days</span><span><b>${duration(totalMinutes(job))}</b> team time</span><span><b>${job.team.length}</b> team members</span></div><h3 class="sectionLabel">Daily work records</h3>${workDaysMarkup(job,1)}<details class="jobsEvidenceDisclosure"><summary>Materials, results & photos <span>${job.materials.length} · ${job.testing.length} · ${job.photos.length}</span></summary><div class="jobsEvidenceBody">${materialsTab(job, true)}${testingTab(job, true)}${photosTab(job, true)}${notesTab(job, true)}</div></details><details class="jobsEvidenceDisclosure"><summary>Team & work sessions</summary><div class="jobsEvidenceBody">${adminTeamTimeTab(job)}</div></details></section><aside class="jobsReviewDecision">${signoffTab(job, true)}<dl class="jobsMetadata">${metadata("Submitted", submitted ? `${submitted.actor} · ${localDateTime(submitted.at)}` : "Not submitted")}${job.correctionReason ? metadata("Correction requested", job.correctionReason) : ""}</dl>${workflowBar(job)}<details class="jobsEvidenceDisclosure"><summary>Activity history <span>${job.activity.length}</span></summary><div class="jobsTimeline">${job.activity.slice().reverse().map((item) => timeline(item.actor, item.summary, item.at)).join("")}</div></details></aside></div>`;
   }
   function supervisorOverviewTab(job) { const correction = job.status === "correction_required" ? `<div class="jobsReviewBanner correction"><b>Correction required</b><p>${h(job.correctionReason)}</p></div>` : ""; return `${correction}${panel("Job details", "", `<div class="jobsDetailGrid">${field("Client", job.clientName)}${field("Scheduled", scheduleLabel(job))}${field("Site / address", `${job.site || ""}\n${job.serviceAddress}`)}${field("Team", job.team.map((person) => person.name).join(", "))}</div>`)}${panel("Client request", "", `<div class="jobsFieldCard"><p>${h(job.description)}</p></div>`)}`; }
-  function supervisorRecordsTab(job) { return panel("Job records", "Completed daily work, newest last.", workDaysMarkup(job)); }
+  function supervisorRecordsTab(job) { return panel("Job records", "Completed daily work, newest last.", workDaysMarkup(job))+(!isMockMode?`<details class="jobsEvidenceDisclosure"><summary>Activity history <span>${job.activity.length}</span></summary><div class="jobsTimeline">${job.activity.slice().reverse().map(a=>timeline(a.actor,a.summary,a.at)).join('')||'<p>No activity returned.</p>'}</div></details>`:''); }
   function teamTab(job) {
     const editable=activeTab==='team-time'&&canPlan()&&!['completed','cancelled','submitted_for_review'].includes(job.status)&&!(['in_progress','correction_required'].includes(job.status)&&openSessions(job).length);
     const edit=editable?'<button class="jobsIconBtn jobsTeamEdit" type="button" data-action="plan-team" aria-label="Edit assigned team" title="Edit assigned team"><i class="ph ph-pencil-simple" aria-hidden="true"></i></button>':'';

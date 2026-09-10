@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v237"; // Coordinated Jobs compact filter text assets; caching strategy unchanged
+const CACHE_NAME = "shiftly-v238"; // Coordinated supervisor tab cleanup; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -15,7 +15,7 @@ const ASSETS = [
   "/config.js",
   "/app.js",
   "/app.js?v=196",
-  "/jobs.js?v=24",
+  "/jobs.js?v=25",
   "/jobs.css?v=24",
   "/jobs-data.js?v=5",
   "/manifest.json",

@@ -130,6 +130,13 @@ async function harness(role='admin',host='localhost',appContext=null,client=null
   vm.runInContext(source,context);
   if(role!=='employee'&&host==='localhost') await (role==='supervisor'?window.ShiftlyJobs.openSupervisor():window.ShiftlyJobs.openAdmin());
   const click=async selector=>{
+    if(/data-action="review-(?:submit|resubmit)"/.test(selector)&&window.document.querySelector('[data-tab="signoff"]')) {
+      window.document.querySelector('[data-tab="signoff"]').dispatchEvent(new window.Event('click',{bubbles:true}));await tick();
+    }
+    if(/data-action="execute-(?:start|finish)"/.test(selector)&&window.document.querySelector('[data-tab="today"]')) {
+      window.document.querySelector('[data-tab="today"]').dispatchEvent(new window.Event('click',{bubbles:true}));await tick();
+      if(selector.includes('execute-finish')) { window.document.querySelector('#jobsTodayForm').dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true}));await tick();return; }
+    }
     // Workflow tests navigate to the action's new home before exercising it.
     if(/data-action="(?:plan-team|plan-schedule|execute-recover)"/.test(selector)&&window.document.querySelector('[data-tab="team-time"]')){
       window.document.querySelector('[data-tab="team-time"]').dispatchEvent(new window.Event('click',{bubbles:true}));await tick();
@@ -584,7 +591,7 @@ test('assigned active Supervisor starts, finishes and continues multi-day work w
   for(let day=1;day<=2;day++){
     await h.click('[data-action="execute-finish"]');await h.submit({work:'Day '+day+' work',notes:'Remaining tasks'});
     const job=h.window.__jobsTest.detail();assert.equal(job.status,'in_progress');assert.equal(job.workDays.length,day);assert.ok(job.sessions.every(s=>s.endedAt));
-    assert.match(h.document.body.textContent,/Paused/);assert.ok(h.document.querySelector('[data-action="execute-start"]'));
+    assert.match(h.document.body.textContent,/Paused/);await h.click('[data-tab="today"]');assert.ok(h.document.querySelector('[data-action="execute-start"]'));
     if(day===1){await h.click('[data-action="execute-start"]');await h.submit({});}
   }
   assert.deepEqual(client.model.calls.map(c=>c.name),['start_job_work','finish_work_for_today','start_job_work','finish_work_for_today']);
@@ -696,7 +703,7 @@ test('late mutation from a closed workspace cannot replace a reopened same-compa
 async function reviewHarness(role,client) {
   const h=await harness('admin','preview.invalid',{...liveCtx,role},client);
   await h.window.ShiftlyJobs.openAdmin();await h.window.__jobsTest.loadLiveDetail(liveRow.id);
-  if(['owner','admin'].includes(role))await h.click('[data-tab="review"]');return h;
+  if(['owner','admin'].includes(role))await h.click('[data-tab="review"]');else await h.click('[data-tab="signoff"]');return h;
 }
 test('Admin Overview is details-first; recovery and lifecycle retain separate tab homes',async()=>{
   const h=await reviewHarness('admin',reviewClient({otherSession:true}));
@@ -750,6 +757,24 @@ test('Daily work records show newest first in a two-record scroll region without
   assert.equal(reviewList.previousElementSibling.textContent,'Daily work records');
   assert.match(h.document.querySelector('.jobsReviewCounts').textContent,/3 work days.*team time.*team members/);
   job.workDays=job.workDays.slice(0,2);await h.click('[data-tab="work"]');assert.ok(!h.document.querySelector('.jobsDayListScrollable'));
+});
+
+test('Supervisor tabs have one work control, submission in Sign-off and history in Records',async()=>{
+  const h=await reviewHarness('supervisor',reviewClient());
+  await h.click('[data-tab="overview"]');
+  assert.ok(!h.document.querySelector('.jobsLifecycleStrip'));
+  assert.ok(!h.document.querySelector('.jobsActionBar'));
+  assert.ok(!h.document.querySelector('[data-action="review-submit"]'));
+  assert.match(h.document.querySelector('#jobsTabPanel').textContent,/Job details/);
+  await h.click('[data-tab="today"]');
+  assert.equal(h.document.querySelectorAll('[data-action="execute-start"]').length,1);
+  assert.ok(!h.document.querySelector('.jobsActionBar'));
+  await h.click('[data-tab="signoff"]');
+  assert.equal(h.document.querySelectorAll('[data-action="review-submit"]').length,1);
+  assert.ok(!h.document.querySelector('.jobsLifecycleStrip'));
+  await h.click('[data-tab="records"]');
+  const history=[...h.document.querySelectorAll('summary')].filter(el=>el.textContent.includes('Activity history'));
+  assert.equal(history.length,1);assert.equal(history[0].parentElement.hasAttribute('open'),false);
 });
 
 test('Admin Review contains only the approved Activity History disclosure',async()=>{
