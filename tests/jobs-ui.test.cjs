@@ -5,6 +5,11 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const {parseHTML}=require('linkedom');
 const crypto=require('node:crypto');
+test('mobile supervisor cards retain details left and status above action at right',()=>{
+  const css=fs.readFileSync('public/jobs.css','utf8');
+  assert.match(css,/\.jobsSupervisorRow > button \{ display: grid; grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css,/\.jobsSupervisorRow \.jobsCompactAction \{ display: grid; grid-template-columns: 1fr;[^}]*justify-items: end;/);
+});
 test('job actions menu is hidden at the workspace mobile breakpoint',()=>{
   const css=fs.readFileSync('public/jobs.css','utf8');
   assert.match(css,/@media \(max-width: 700px\)\s*\{\s*\.jobsMoreActions\s*\{\s*display: none;/);

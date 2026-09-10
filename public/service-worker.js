@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v239"; // Coordinated supervisor mobile row alignment; caching strategy unchanged
+const CACHE_NAME = "shiftly-v240"; // Restore supervisor stacked status and action; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -16,7 +16,7 @@ const ASSETS = [
   "/app.js",
   "/app.js?v=196",
   "/jobs.js?v=25",
-  "/jobs.css?v=25",
+  "/jobs.css?v=26",
   "/jobs-data.js?v=5",
   "/manifest.json",
   "/icons/shiftly-favicon-32.png",
