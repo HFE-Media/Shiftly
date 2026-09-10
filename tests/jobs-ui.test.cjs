@@ -482,6 +482,22 @@ test('unknown create outcome requires explicit refresh and never retries itself'
   assert.equal(h.document.querySelector('[name="title"]').value,'New');
 });
 
+test('Assigned team has a far-right pencil opening the existing team editor without a planning card',async()=>{
+  const client=planningTransport(),h=await harness('admin','preview.invalid',liveCtx,client);
+  await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="open"]');await h.click('[data-tab="team-time"]');
+  const edit=h.document.querySelector('.jobsTeamEdit');
+  assert.ok(edit);
+  assert.equal(edit.parentElement.querySelector('h2').textContent,'Assigned team');
+  assert.equal(edit.parentElement.lastElementChild,edit);
+  assert.ok(edit.querySelector('.ph-pencil-simple'));
+  assert.ok(!h.document.querySelector('.jobsWorkspaceBody').textContent.includes('Job planning'));
+  assert.match(fs.readFileSync('public/jobs.css','utf8'),/\.jobsTeamEdit \{ margin-left: auto;/);
+  await h.click('[data-action="plan-team"]');
+  assert.equal(h.document.querySelector('#jobsModal').hidden,false);
+  assert.ok(h.document.querySelector('[name="operation"]'));
+  assert.equal(client.calls.length,0);
+});
+
 test('team and schedule operations use fetched revision and authoritative refresh only',async()=>{
   for(const method of ['assign','replaceLead','unassign','schedule']){
     const client=planningTransport(),h=await harness('admin','preview.invalid',liveCtx,client);await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="open"]');
