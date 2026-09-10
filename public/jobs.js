@@ -253,6 +253,7 @@
     return !isMockMode && window.ShiftlyJobsData.canOpen(liveContext()) && liveContext().role==='supervisor' && liveWorkerActive && liveAdapter?.capabilities.execution===true && job?.detailLoaded===true && job.team.some(e=>e.employeeId===liveContext().employeeId);
   }
   function canOperate(){return canPlan()||canExecute();}
+  function canAddMaterial(job=liveDetail){return canExecute(job)&&!!currentSession(job)&&['in_progress','correction_required'].includes(job.status);}
   function isLead(job){return canExecute(job)&&job.lead?.employeeId===liveContext().employeeId;}
   function reviewAllowed(method,job=liveDetail) {
     if(!job||!liveAdapter?.capabilities.review||['completed','cancelled'].includes(job.status))return false;
@@ -820,7 +821,7 @@
     if (!active) return panel("Today's work", "", `<div class="jobsTodayEmpty"><i class="ph ph-play-circle"></i><b>${job.status === "scheduled" ? "Start this Job to begin today's work." : "Continue this Job to begin a new work day."}</b><button class="platformBtn inline jobsBtn primary" type="button" data-action="${isMockMode ? 'start' : 'execute-start'}">${job.status === "scheduled" ? "Start Job" : "Continue Job"}</button></div>`);
     const draft = job.currentDraft || (!isMockMode && liveDrafts.get(job.id)) || { work: "", notes: "" };
     return `<form id="jobsTodayForm" class="jobsTodayForm"><div class="jobsTodayHead"><div><span>Today's work</span><h2>${localDate(new Date().toISOString().slice(0, 10))}</h2></div><span class="mutedText">Session started ${localDateTime(active.startedAt)}</span></div><label class="jobsLabel jobsWorkDescription">Work Performed<textarea class="jobsInput platformInput" name="todayWork" required placeholder="Describe the work completed today">${h(draft.work)}</textarea></label>
-      <div class="jobsGroupedGrid jobsTodayRecords">${materialsTab(job, !isMockMode)}${testingTab(job, !isMockMode)}</div>${photosTab(job, !isMockMode)}
+      <div class="jobsGroupedGrid jobsTodayRecords">${materialsTab(job, !isMockMode && !canAddMaterial(job))}${testingTab(job, !isMockMode)}</div>${photosTab(job, !isMockMode)}
       <label class="jobsLabel jobsOutstandingNotes">Notes / Outstanding Work<textarea class="jobsInput platformInput" name="todayNotes" placeholder="What remains to be done? Include access notes or handover details.">${h(draft.notes)}</textarea></label>
       <div class="jobsTodayFinish"><div><b>Ready to finish this session?</b><span>Save this work record. The Job stays open for another day.</span></div><button class="platformBtn inline jobsBtn primary" type="submit"><i class="ph ph-stop-circle"></i>Finish Work for Today</button></div></form>`;
   }
@@ -1060,7 +1061,7 @@
     finally{if(adapter===liveAdapter&&key===JSON.stringify(liveContext())){planningPending=false;lockPlanningForm(false);}}
   }
   async function planningMutation(method,args,jobId='') {
-    if(!canOperate()||!['create','assign','replaceLead','unassign','schedule','start','finish','adminCloseSession','submit','resubmit','returnCorrection','approve','cancel'].includes(method))throw new Error('Workflow unavailable.');
+    if(!canOperate()||!['create','assign','replaceLead','unassign','schedule','start','finish','adminCloseSession','submit','resubmit','returnCorrection','approve','cancel','addMaterial'].includes(method))throw new Error('Workflow unavailable.');
     if(planningRefreshRequired)throw new Error('Refresh authoritative state before retrying.');
     if(method!=='create') {
       const job=liveDetail;
@@ -1075,6 +1076,7 @@
       if(method==='adminCloseSession'&&(!['in_progress','correction_required'].includes(job.status)||!openSessions(job).some(s=>s.id===args[2])||!args[3]?.trim()))throw new Error('Open session and recovery reason required.');
     }
     if(['submit','resubmit','returnCorrection','approve','cancel'].includes(method)){if(!reviewAllowed(method))throw new Error('This lifecycle action is no longer available. Refresh the Job.');}
+    else if(method==='addMaterial'){if(!canAddMaterial())throw new Error('Own active work session required to add materials.');}
     else if(['start','finish'].includes(method)){if(!canExecute())throw new Error('Assigned active Supervisor required.');}
     else if(!canPlan())throw new Error('Manager required.');
     const key=JSON.stringify(liveContext()),adapter=liveAdapter;
@@ -1214,12 +1216,21 @@
 
   function simpleEntryModal(kind, config) {
     const job = selectedJob(); if (!job) return;
+    if(!isMockMode){
+      if(kind!=='Material'||!canAddMaterial(job)){toast('An active work session is required to add materials.');return;}
+      planningJobId=job.id;planningRefreshRequired=false;
+      openModal({...config,planning:true,onSubmit:async data=>{
+        const material={description:String(data.get('description')||'').trim(),quantity:Number(data.get('quantity')),unit:String(data.get('unit')||'').trim()};
+        if(!material.description||!material.unit||!Number.isFinite(material.quantity)||material.quantity<=0)throw new Error('Description, unit and positive quantity required.');
+        await planningMutation('addMaterial',[job.id,job.revision,material],job.id);
+      }});return;
+    }
     openModal({ ...config, onSubmit: async data => { await config.save(job,data); closeModal(); updateJob(); toast(`${kind} added locally`); } });
   }
 
   function addWorkModal() { toast("Use Finish Work for Today to save a work record with its session."); }
   function addMaterialModal() { simpleEntryModal("Material", { title:"Add Material",submitLabel:"Add Material",
-    body: `<div class="jobsFormGrid">${label("description", "Description", input("text", "e.g. Weatherproof isolator", true), true)}${label("quantity", "Quantity", input("number", "1", true, "1"))}${label("unit", "Unit", `<select class="jobsInput" name="NAME"><option>unit</option><option>metres</option><option>m²</option><option>kg</option><option>litres</option><option>pack</option></select>`)}</div>`,
+    body: `<div class="jobsFormGrid">${label("description", "Description", input("text", "e.g. Weatherproof isolator", true), true)}${label("quantity", "Quantity", input("number", "1", true, "1"))}${label("unit", "Unit", `<select class="jobsInput" name="NAME"><option value="unit">unit</option><option value="metres">metres</option><option value="m²">m²</option><option value="kg">kg</option><option value="litres">litres</option><option value="pack">pack</option></select>`)}</div>`,
     save:(job,data)=>dataService.evidence(job.id,job.revision,"material",{description:data.get("description"),quantity:Number(data.get("quantity")),unit:data.get("unit")}) }); }
   function addTestModal() { simpleEntryModal("Test result", { title:"Add Test / Check",submitLabel:"Add Result",
     body: `<div class="jobsFormGrid">${label("description", "Test / check description", input("text", "e.g. Insulation resistance", true), true)}${label("result", "Result", input("text", "PASS / reading", true))}${label("note", "Note", input("text", "Optional supporting detail"))}</div>`,
@@ -1370,7 +1381,7 @@
   function bindEvents() {
     document.getElementById("btnOpenJobsAdmin")?.addEventListener("click", () => openJobs("admin"));
     document.getElementById("btnOpenJobsSupervisor")?.addEventListener("click", () => openJobs("supervisor"));
-    root.addEventListener("click", event => { const action = event.target.closest("[data-action]")?.dataset.action; if (["start","finish","submit","return","approve","create","add-material","add-test","add-photo","add-note","signoff"].includes(action)) performAction(() => handleRootClick(event)); else handleRootClick(event); });
+    root.addEventListener("click", event => { const action = event.target.closest("[data-action]")?.dataset.action; if(!isMockMode&&action==="add-material"){handleRootClick(event);return;} if (["start","finish","submit","return","approve","create","add-material","add-test","add-photo","add-note","signoff"].includes(action)) performAction(() => handleRootClick(event)); else handleRootClick(event); });
     root.addEventListener("keydown", (event) => {
       const row = event.target.closest("tr[data-action=open]"); if (row && ["Enter", " "].includes(event.key)) { event.preventDefault(); openJob(row.dataset.id); }
       const tab = event.target.closest("[role=tab]"); if (tab && ["ArrowLeft", "ArrowRight"].includes(event.key)) { const list = [...tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]')]; const index = list.indexOf(tab); const next = list[(index + (event.key === "ArrowRight" ? 1 : -1) + list.length) % list.length]; next.focus(); next.click(); }
@@ -1416,6 +1427,7 @@
       if(action==='execute-start')return openExecution('start');
       if(action==='execute-finish')return openExecution('finish');
       if(action==='execute-recover')return openExecution('recover',button.dataset.session);
+      if(action==='add-material')return addMaterialModal();
       if(action==='plan-create'||action==='create')return openPlanning('create');
       if(action==='plan-team')return openPlanning('team');
       if(action==='plan-schedule')return openPlanning('schedule');

@@ -58,6 +58,7 @@ function executionTransport({active=true,assigned=true,status='scheduled',otherS
     assert.ok(['jobs','employees','job_assignments','job_time_entries','job_work_days','job_materials','job_test_results','job_notes','job_activity','job_completion_snapshots'].includes(r.table),'Forbidden table: '+r.table);
     if(r.table==='job_completion_snapshots')return {data:model.snapshot?[{payload:model.snapshot}]:[]};
     if(r.table==='jobs')return {data:r.single?{...model.job,revision:model.revision}:[{...model.job,revision:model.revision}]};
+    if(r.table==='job_materials')return {data:model.materials||[]};
     if(r.table==='employees')return {data:active?[{employee_id:liveCtx.employeeId,active:true}]:[]};
     const rows={job_assignments:assigned?[{employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',assignment_role:lead?'lead':'member'}]:[],job_time_entries:model.sessions,job_work_days:model.days,job_activity:model.activity};
     return {data:JSON.parse(JSON.stringify((rows[r.table]||[]).map(row=>({job_id:model.job.id,...row}))))};
@@ -65,6 +66,10 @@ function executionTransport({active=true,assigned=true,status='scheduled',otherS
   client.model=model;
   client.rpc=async(name,args)=>{
     model.calls.push({name,args});assert.equal(args.p_revision,model.revision);
+    if(name==='add_job_evidence'){
+      assert.equal(args.p_kind,'material');const session=model.sessions.find(s=>s.employee_id===liveCtx.employeeId&&!s.ended_at);assert.ok(session);
+      model.materials=[...(model.materials||[]),{id:'saved-material',...args.p_data,session_id:session.id,actor_name:'Stored Supervisor',created_at:'2026-09-09T09:00:00Z'}];model.revision++;return {data:'saved-material'};
+    }
     if(name==='start_job_work') {
       model.job.lifecycle_status='in_progress';model.sessions.push({id:'stored-session-'+model.revision,employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',started_at:`2026-09-${String(8+model.days.length).padStart(2,'0')}T08:00:00Z`,ended_at:null});model.revision++;return {data:'ack-session-not-for-render'};
     }
@@ -331,11 +336,21 @@ test('live Supervisor uses grouped dashboard and Today form without mock evidenc
   assert.ok(h.document.querySelector('.jobsSupervisorRow.current'));
   await h.click('[data-action="open"]');
   const form=h.document.querySelector('#jobsTodayForm');assert.ok(form);
-  assert.equal(h.document.querySelector('[data-action="add-material"]'),null);
+  assert.ok(h.document.querySelector('[data-action="add-material"]'));
   form.querySelector('[name="todayWork"]').value='Draft work';
   form.dispatchEvent(new h.window.Event('submit',{bubbles:true,cancelable:true}));await tick();
   assert.equal(h.document.querySelector('#jobsModal [name="work"]').value,'Draft work');
   assert.equal(client.model.calls.length,0,'opening finish confirmation must not write');
+});
+test('live materials save through revision RPC and refresh into work record and Job Card',async()=>{
+  const client=executionTransport({status:'in_progress'});
+  client.model.sessions.push({id:'own',employee_id:liveCtx.employeeId,started_at:'2026-09-09T08:00:00Z',ended_at:null});
+  const h=await harness('admin','preview.invalid',{...liveCtx,role:'supervisor'},client);
+  await h.window.ShiftlyJobs.openSupervisor();await h.click('[data-action="open"]');await h.click('[data-action="add-material"]');
+  await h.submit({description:'Cable',quantity:'0',unit:'metres'});assert.equal(client.model.calls.length,0);
+  await h.submit({description:'Cable',quantity:'2.5',unit:'metres'});assert.equal(client.model.calls.length,1);
+  const job=h.window.__jobsTest.detail();assert.equal(job.materials[0].sessionId,'own');assert.equal(job.materials[0].quantity,2.5);assert.equal(job.revision,2);
+  assert.match(h.document.body.textContent,/Cable/);
 });
 
 test('disabled, missing entitlement and ineligible roles initialize no adapter and perform zero reads',async()=>{

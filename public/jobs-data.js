@@ -220,7 +220,10 @@
     const planningRpcs=['create_job_with_team','assign_job_employee','replace_job_lead','unassign_job_employee','schedule_job'];
     const manager=()=>{const c=context();if(!['owner','admin'].includes(c.role))fail('Manager required','42501');return c;};
     const rpc = (name, args) => {
-      if(review && ['submit_job_for_review','resubmit_job_for_review','return_job_for_correction','approve_job_complete','cancel_job'].includes(name)) {
+      if(execution && name==='add_job_evidence' && args.p_kind==='material') {
+        if(context().role!=='supervisor')fail('Assigned Supervisor required','42501');
+      }
+      else if(review && ['submit_job_for_review','resubmit_job_for_review','return_job_for_correction','approve_job_complete','cancel_job'].includes(name)) {
         if(['submit_job_for_review','resubmit_job_for_review'].includes(name)){if(context().role!=='supervisor')fail('Supervisor lead required','42501');}
         else manager();
       }
@@ -235,6 +238,11 @@
     const args = (id,revision) => ({p_job_id:id,p_revision:revision});
     const api = {
       mode:'supabase', capabilities:Object.freeze({mediaPersistence:false}), clear(){generation++;},
+      addMaterial(id,revision,data) {
+        const description=String(data.description||'').trim(),unit=String(data.unit||'').trim(),quantity=Number(data.quantity);
+        if(!description||!unit||!Number.isFinite(quantity)||quantity<=0)fail('Description, unit and positive quantity required');
+        return rpc('add_job_evidence',{...args(id,revision),p_kind:'material',p_data:{description,quantity,unit}});
+      },
       async workEligibility() {
         if(context().role!=='supervisor')return false;
         const rows=await query(c=>client.from('employees').select('employee_id,active').eq('company_id',c.companyId).eq('employee_id',c.employeeId).eq('active',true).range(0,0));
@@ -326,7 +334,7 @@
       setEntitlement(companyId,value) { if(readOnly || getContext()?.platformAdmin!==true) fail('Platform administrator required','42501'); return client.from('companies').update({jobs_enabled:value===true}).eq('id',companyId).select('id,jobs_enabled').single(); }
     };
     // UI receives no write methods at all during read-only integration.
-    if(planning||execution||review)return Object.freeze(Object.fromEntries(['mode','list','dashboard','detail','clear',...(planning?['directories','create','assign','replaceLead','unassign','schedule']:[]),...(execution?['workEligibility','start','finish','adminCloseSession']:[]),...(review?['submit','resubmit','returnCorrection','approve','cancel']:[])].map(key=>[key,api[key]]).concat([['capabilities',Object.freeze({planning,execution,review,mediaPersistence:false})]])));
+    if(planning||execution||review)return Object.freeze(Object.fromEntries(['mode','list','dashboard','detail','clear',...(planning?['directories','create','assign','replaceLead','unassign','schedule']:[]),...(execution?['workEligibility','start','finish','adminCloseSession','addMaterial']:[]),...(review?['submit','resubmit','returnCorrection','approve','cancel']:[])].map(key=>[key,api[key]]).concat([['capabilities',Object.freeze({planning,execution,review,mediaPersistence:false})]])));
     return readOnly ? Object.freeze({mode:'supabase',list:api.list,dashboard:api.dashboard,detail:api.detail,clear:api.clear,capabilities:Object.freeze({readOnly:true,mediaPersistence:false})}) : api;
   }
   // Preparation hook only: host explicitly mounts this in PLATFORM settings.

@@ -8,6 +8,15 @@ vm.runInNewContext(fs.readFileSync('public/jobs-data.js','utf8'),sandbox);
 const API = sandbox.window.ShiftlyJobsData;
 const person={employeeId:'E100',name:'Demo Supervisor',role:'supervisor'};
 const ctx=role=>({companyId:'demo',userId:role,role,jobsEnabled:true,employeeId:'E100'});
+test('materials facade allows only validated material RPC for supervisors',async()=>{
+  let c=ctx('supervisor');const calls=[];
+  const api=API.createSupabase({getContext:()=>c,readOnly:true,execution:true,client:{rpc:async(name,args)=>{calls.push({name,args});return {data:'material-id'};}}});
+  assert.equal(api.evidence,undefined);
+  assert.equal(await api.addMaterial('j',4,{description:' Cable ',quantity:2.5,unit:'metres',actor:'forged'}),'material-id');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{name:'add_job_evidence',args:{p_company_id:'demo',p_job_id:'j',p_revision:4,p_kind:'material',p_data:{description:'Cable',quantity:2.5,unit:'metres'}}});
+  for(const quantity of [0,-1,Infinity,NaN])assert.throws(()=>api.addMaterial('j',4,{description:'Cable',quantity,unit:'m'}));
+  c=ctx('admin');assert.throws(()=>api.addMaterial('j',4,{description:'Cable',quantity:1,unit:'m'}),/Supervisor/);assert.equal(calls.length,1);
+});
 test('lead directory uses only scoped read RPC, paginates and rejects stale context',async()=>{
   let c=ctx('admin');const calls=[];
   const client={from(name){assert.ok(['sites','employees'].includes(name));const q={select(){return q;},eq(){return q;},order(){return q;},range(){return Promise.resolve({data:name==='employees'?[{employee_id:'E100',full_name:'Employee 1',active:true}]:[]});}};return q;},rpc:async(name,args)=>{calls.push({name,args});return {data:args.p_offset===0?Array.from({length:250},()=>({employee_id:'E100',supervisor_id:'SUP01'})):[]};}};
