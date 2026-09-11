@@ -64,6 +64,16 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local credentials (never browser configuration)
+secrets/
+*service-account*.json
+*serviceAccount*.json
+*.pem
+*.key
 
 # dataconnect generated files
 .dataconnect
