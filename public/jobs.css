@@ -474,6 +474,31 @@
 .jobsPhotoMeta { padding: 12px; }
 .jobsPhotoMeta b { font-size: 10px; }
 .jobsPhotoMeta span { display: block; margin-top: 4px; color: #bbb5aa; font-size: 9px; }
+.jobsPhotoPreview { container-type: inline-size; }
+.jobsPhotoPreview .jobsPhotoGrid { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.jobsPhotoPreview button.jobsPhoto { padding:0; text-align:left; color:inherit; font:inherit; cursor:pointer; min-height:0; }
+.jobsPhotoThumb { position:relative; display:grid; width:100%; height:140px; place-items:center; }
+.jobsPhotoThumb img { width:100%; height:100%; object-fit:cover; }
+.jobsPhotoMore { display:none; position:absolute; inset:0; align-items:center; justify-content:center; background:#0009; color:#fff; font-size:24px; font-weight:700; }
+.jobsPhotoPreview .jobsPhoto:nth-child(3) .jobsPhotoMore { display:flex; }
+.jobsPhotoPreview .jobsPhotoMeta b, .jobsGallery p { text-transform:capitalize; }
+.jobsGallery img { display:block; max-height:60vh; object-fit:contain; }
+.jobsGallery .jobsModalActions { align-items:center; justify-content:space-between; font-size:12px; }
+.jobsGallery p { font-size:12px; overflow-wrap:anywhere; }
+.jobsGallery .jobsModalActions .jobsIconBtn { width:44px; height:44px; border-radius:12px; }
+.jobsGallery .jobsModalActions .jobsIconBtn:disabled { opacity:0.35; cursor:default; }
+.jobsGallery .jobsModalActions .jobsIconBtn:focus-visible { outline:2px solid #d4af37; outline-offset:3px; }
+.jobsGallery .jobsModalBody small { color:#aaa497; font-size:11px; }
+@container (max-width: 460px) {
+  .jobsPhotoPreview .jobsPhotoGrid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .jobsPhotoPreview .jobsPhoto:nth-child(n+3) { display:none; }
+  .jobsPhotoPreview .jobsPhoto:nth-child(2) .jobsPhotoMore { display:flex; }
+}
+@container (max-width: 260px) {
+  .jobsPhotoPreview .jobsPhotoGrid { grid-template-columns:1fr; }
+  .jobsPhotoPreview .jobsPhoto:nth-child(n+2) { display:none; }
+  .jobsPhotoPreview .jobsPhoto:first-child .jobsPhotoMore { display:flex; }
+}
 
 .jobsPerson { gap: 10px; }
 .jobsAvatar {
@@ -879,6 +904,13 @@ textarea.jobsInput { min-height: 100px; resize: vertical; line-height: 1.5; }
   .jobsCompactAction > span:last-child { justify-self: end; }
 }
 
+/* Explicit two-photo rows paginate independently; never group the entire gallery. */
+.jobsPaperPhotoStart, .jobsPaperPhotoRow { break-inside: avoid; page-break-inside: avoid; }
+.jobsPaperPhotoRow { display: table; table-layout: fixed; width: 100%; margin: 0 0 12px; }
+.jobsPaperPhoto, .jobsPaperPhotoSpacer { display: table-cell; width: 50%; vertical-align: top; margin: 0; padding: 0 6px; }
+.jobsPaperPhoto a { display: block; }
+.jobsPaperPhoto img { display: block; width: 100% !important; height: 65mm !important; object-fit: contain !important; object-position: center; }
+.jobsPaperPhoto figcaption { font-size: 11px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
 @media print {
   body.jobsPrinting > *:not(.jobsShell) { display: none !important; }
   body.jobsPrinting .jobsTopbar,

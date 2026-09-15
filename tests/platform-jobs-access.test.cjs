@@ -83,10 +83,10 @@ test('disable action changes only Jobs entitlement; no-op does not write', async
 
 test('release changes app cache key and precaches the exact HTML script URL', () => {
   const src = html.match(/<script defer src="\.\/(app\.js\?v=\d+)"/)[1];
-  assert.equal(src, 'app.js?v=196');
+  assert.equal(src, 'app.js?v=197');
   assert.ok(sw.includes('"/' + src + '"'));
-  assert.match(sw, /CACHE_NAME = "shiftly-v241"/);
-  for(const asset of ['jobs.js?v=25','jobs-data.js?v=5','jobs.css?v=27']) {
+  assert.match(sw, /CACHE_NAME = "shiftly-v244"/);
+  for(const asset of ['jobs.js?v=27','jobs-data.js?v=6','jobs.css?v=29']) {
     assert.ok(sw.includes(asset));
     assert.ok(fs.readFileSync('public/login.html','utf8').includes(asset));
   }

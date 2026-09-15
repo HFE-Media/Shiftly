@@ -86,6 +86,9 @@ supabase/.temp/
 
 # Generated local review and deployment artifacts
 tmp/
+.wrangler/
+.dev.vars
+.dev.vars.*
 
 # Local editor and duplicate scratch files
 *.code-workspace

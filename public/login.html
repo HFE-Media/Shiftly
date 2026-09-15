@@ -14,7 +14,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="./icons/shiftly-favicon-32.png?v=148"/>
 <link rel="icon" type="image/png" sizes="192x192" href="./icons/shiftly-favicon-192.png?v=148"/>
 <link rel="manifest" href="./manifest.json"/>
-  <link rel="stylesheet" href="./jobs.css?v=27"/>
+  <link rel="stylesheet" href="./jobs.css?v=29"/>
 
 <!-- Libraries -->
 <script src="https://unpkg.com/html5-qrcode"></script>
@@ -4201,9 +4201,10 @@ select{
 </main>
 
 <script src="./config.js"></script>
-  <script defer src="./app.js?v=196"></script>
-  <script defer src="./jobs-data.js?v=5"></script>
-  <script defer src="./jobs.js?v=25"></script>
+  <script defer src="./app.js?v=197"></script>
+  <script>window.SHIFTLY_JOBS_PHOTO_ENDPOINT = 'https://shiftly-jobs-photos.shiftly-static-app.workers.dev/photos';</script>
+  <script defer src="./jobs-data.js?v=6"></script>
+  <script defer src="./jobs.js?v=27"></script>
 <script>
   if (window.location.protocol !== "file:" && "serviceWorker" in navigator) {
     window.addEventListener("load", () => {

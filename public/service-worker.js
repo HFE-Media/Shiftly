@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v241"; // Compact supervisor mobile row height; caching strategy unchanged
+const CACHE_NAME = "shiftly-v244"; // Job Card paired photo rows; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -14,10 +14,10 @@ const ASSETS = [
   "/login.html",
   "/config.js",
   "/app.js",
-  "/app.js?v=196",
-  "/jobs.js?v=25",
-  "/jobs.css?v=27",
-  "/jobs-data.js?v=5",
+  "/app.js?v=197",
+  "/jobs.js?v=27",
+  "/jobs.css?v=29",
+  "/jobs-data.js?v=6",
   "/manifest.json",
   "/icons/shiftly-favicon-32.png",
   "/icons/shiftly-favicon-192.png",

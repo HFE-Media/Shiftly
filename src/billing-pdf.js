@@ -272,3 +272,52 @@ export async function download(html) {
   const pdf = await createPdf(model);
   await pdf.save(`${model.title}.pdf`, { returnPromise: true });
 }
+
+// Payroll uses the same bundled PDF dependencies, not Billing data or permissions.
+// Amounts arrive in cents from the current payroll/payslip calculation snapshot.
+export function createPayrollSummaryPdf(model) {
+  if (!model.employees?.length) throw new Error("No employees in this payroll run.");
+  const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true, putOnlyUsedFonts: true });
+  pdf.addFileToVFS("LiberationSans-Regular.ttf", regularFont);
+  pdf.addFileToVFS("LiberationSans-Bold.ttf", boldFont);
+  pdf.addFont("LiberationSans-Regular.ttf", FONT, "normal");
+  pdf.addFont("LiberationSans-Bold.ttf", FONT, "bold");
+  pdf.setFont(FONT, "bold");
+  pdf.setFontSize(16);
+  pdf.setTextColor(INK);
+  const companyLines = pdf.splitTextToSize(model.company, WIDTH);
+  pdf.text(companyLines, LEFT, 19);
+  const headingY = 19 + companyLines.length * 6;
+  pdf.setFontSize(11);
+  pdf.text("PAYROLL SUMMARY", LEFT, headingY + 3);
+  pdf.setFont(FONT, "normal");
+  pdf.setFontSize(9);
+  pdf.setTextColor(MUTED);
+  pdf.text(`${model.start} to ${model.end}  |  ${model.employees.length} employees  |  ZAR`, LEFT, headingY + 10);
+  pdf.setDrawColor(GOLD);
+  pdf.setLineWidth(0.6);
+  pdf.line(LEFT, headingY + 14, RIGHT, headingY + 14);
+  const money = cents => (cents / 100).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).replace(/\u00a0/g, " ");
+  autoTable(pdf, {
+    startY: headingY + 19, margin: { left: LEFT, right: 12, top: 20, bottom: 40 },
+    head: [["Employee no.", "Employee name", "Gross pay (R)", "Deductions (R)", "Net pay (R)"]],
+    body: model.employees.map(row => [row.id, row.name, money(row.gross), money(row.deductions), money(row.net)]),
+    foot: [["TOTAL", `${model.employees.length} employees`, money(model.totals.gross), money(model.totals.deductions), money(model.totals.net)]],
+    showFoot: "lastPage", showHead: "everyPage", rowPageBreak: "avoid", theme: "grid",
+    styles: { font: FONT, fontSize: 8, cellPadding: 2.5, textColor: INK, lineColor: BORDER, lineWidth: 0.15, overflow: "linebreak" },
+    headStyles: { fillColor: "#f3efe4", textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: "#181818", textColor: "#ffffff", fontStyle: "bold" },
+    columnStyles: { 0: { cellWidth: 27 }, 1: { cellWidth: 66 }, 2: { cellWidth: 31, halign: "right" }, 3: { cellWidth: 31, halign: "right" }, 4: { cellWidth: 31, halign: "right" } },
+    didParseCell: data => { if (data.column.index >= 2) data.cell.styles.halign = "right"; }
+  });
+  const pages = pdf.getNumberOfPages();
+  for (let page = 1; page <= pages; page++) {
+    pdf.setPage(page);
+    pdf.setFont(FONT, "normal"); pdf.setFontSize(7); pdf.setTextColor(MUTED);
+    if (page > 1) pdf.text(`Payroll summary | ${model.start} to ${model.end}`, LEFT, 12);
+    pdf.text("Confidential payroll summary - download does not finalise payroll.", LEFT, 282);
+    pdf.text(`Page ${page} of ${pages}`, RIGHT, 282, { align: "right" });
+  }
+  pdf.setProperties({ title: "Payroll Summary", subject: `${model.company}: ${model.start} to ${model.end}`, creator: "Shiftly" });
+  return pdf;
+}

@@ -141,6 +141,9 @@ let companyAdminSites = [];
 let companyAdminSupervisors = [];
 let companyAdminEvents = [];
 let payrollRows = [];
+let payrollSummaryRun = null;
+let payrollSummaryRunVersion = 0;
+let payrollSummaryBusy = false;
 let currentBreakdownEmployeeId = "";
 let currentTimesheetReport = null;
 let companyPayrollRules = null;
@@ -3346,21 +3349,30 @@ function openPayslipModal() {
   if (!payrollRows.length) return alert("Run payroll before generating a payslip.");
   const company = currentCompany();
   el.payslipEmployeeSelect.innerHTML = [
+    `<option value="__summary__">Summary</option>`,
     `<option value="__all__">All employees (${payrollRows.length} payslips)</option>`,
     ...payrollRows.map((row) => (
     `<option value="${escapeHtml(row.employee_id)}">${escapeHtml(row.employee_id)} - ${escapeHtml(row.employee_name || "Employee")} (${escapeHtml(formatMoney(row.gross))})</option>`
     ))
   ].join("");
+  updatePayslipSelection();
+  el.payslipModal.classList.add("show");
+  el.payslipModal.setAttribute("aria-hidden", "false");
+}
+
+function updatePayslipSelection() {
+  const company = currentCompany();
+  const summary = el.payslipEmployeeSelect.value === "__summary__";
   if (el.payslipModalSub) {
-    el.payslipModalSub.textContent = usesPayrollYtd(company, el.payrollEndDate?.value)
+    el.payslipModalSub.textContent = summary
+      ? "Generate a summary of all employees in the current payroll run."
+      : usesPayrollYtd(company, el.payrollEndDate?.value)
       ? "Generating saves this period's totals so PAYE carries forward correctly."
       : "Choose an employee from the current payroll run.";
   }
-  el.btnGeneratePayslip.textContent = usesPayrollYtd(company, el.payrollEndDate?.value)
+  el.btnGeneratePayslip.textContent = summary ? "Generate Summary" : usesPayrollYtd(company, el.payrollEndDate?.value)
     ? "Finalise & Generate Payslip"
     : "Generate Payslip";
-  el.payslipModal.classList.add("show");
-  el.payslipModal.setAttribute("aria-hidden", "false");
 }
 
 function closePayslipModal() {
@@ -3981,8 +3993,67 @@ async function savePayrollPeriodTotals(company, rows, start, end) {
   if (error) throw error;
 }
 
+function buildPayrollSummaryModel(company, rows, period) {
+  const cents = value => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) throw new Error("Payroll contains an invalid amount. Run payroll again.");
+    return Math.round(number * 100);
+  };
+  // Match payslip earnings and active deductions; never recalculate payroll/tax.
+  const employees = rows.map(row => {
+    const gross = Number(row.gross || 0);
+    const deductions = (row.deductions || []).map(normaliseDeduction)
+      .filter(item => item.active).reduce((sum, item) => sum + item.amount, 0);
+    return {
+      id: String(row.employee_id || ""), name: String(row.employee_name || "Employee"),
+      gross: cents(gross), deductions: cents(deductions), net: cents(Math.max(0, gross - deductions))
+    };
+  });
+  const totals = employees.reduce((sum, row) => ({
+    gross: sum.gross + row.gross, deductions: sum.deductions + row.deductions, net: sum.net + row.net
+  }), { gross: 0, deductions: 0, net: 0 });
+  const safeName = String(company.name || "Company").replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, " ").trim().slice(0, 100) || "Company";
+  return { company: String(company.name || "Company"), start: period.start, end: period.end,
+    employees, totals, filename: `${safeName} - Payroll Summary - ${period.start} to ${period.end}.pdf` };
+}
+
+function currentPayrollSummaryRun() {
+  const run = payrollSummaryRun;
+  return currentUser && canUseCompanyDashboard() && run && run.rows === payrollRows &&
+    run.companyId === currentCompany()?.id && run.contextVersion === jobsContextVersion &&
+    run.start === el.payrollStartDate.value && run.end === el.payrollEndDate.value ? run : null;
+}
+
+function generatePayrollSummary() {
+  if (payrollSummaryBusy) return;
+  const run = currentPayrollSummaryRun();
+  if (!run || !run.rows.length) return alert("Run payroll for this company and date range before downloading the summary.");
+  const win = window.open("", "_blank");
+  if (!win) return alert("Allow popups for this site so Shiftly can open the summary.");
+  const button = el.btnGeneratePayslip;
+  payrollSummaryBusy = true;
+  button.disabled = true;
+  const label = button.textContent;
+  button.textContent = "Preparing summary...";
+  try {
+    const model = buildPayrollSummaryModel(currentCompany(), run.rows, run);
+    win.document.open();
+    win.document.write(buildPayslipDocument(currentCompany(), [], { start: run.start, end: run.end, summary: model }));
+    win.document.close();
+    closePayslipModal();
+  } catch (error) {
+    win.close();
+    alert(`Could not generate payroll summary: ${error.message || error}`);
+  } finally {
+    payrollSummaryBusy = false;
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
 async function generateSelectedPayslip() {
   const employeeId = el.payslipEmployeeSelect.value;
+  if (employeeId === "__summary__") return generatePayrollSummary();
   const company = currentCompany();
   const rows = employeeId === "__all__"
     ? payrollRows
@@ -4146,9 +4217,20 @@ function buildPayslipPage(company, row, period) {
     </div>`;
 }
 
+function buildPayrollSummaryPage(model) {
+  const money = value => escapeHtml((value / 100).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const cells = row => `<td>${money(row.gross)}</td><td>${money(row.deductions)}</td><td>${money(row.net)}</td>`;
+  return `<div class="page payrollSummaryPage">
+    <h1>${escapeHtml(model.company)}</h1><h2>PAYROLL SUMMARY</h2>
+    <p>${escapeHtml(model.start)} to ${escapeHtml(model.end)} | ${model.employees.length} employees | ZAR</p>
+    <table class="payrollSummaryTable"><thead><tr><th>Employee no.</th><th>Employee name</th><th>Gross pay (R)</th><th>Deductions (R)</th><th>Net pay (R)</th></tr></thead>
+    <tbody>${model.employees.map(row => `<tr><td>${escapeHtml(row.id)}</td><td>${escapeHtml(row.name)}</td>${cells(row)}</tr>`).join("")}
+    <tr class="payrollSummaryTotal"><td>TOTAL</td><td>${model.employees.length} employees</td>${cells(model.totals)}</tr></tbody></table></div>`;
+}
+
 function buildPayslipDocument(company, rowsOrRow, options = {}) {
   const rows = Array.isArray(rowsOrRow) ? rowsOrRow : [rowsOrRow];
-  const title = rows.length > 1 ? "Payslips" : `Payslip ${rows[0]?.employee_id || ""}`;
+  const title = options.summary ? "Payroll Summary" : rows.length > 1 ? "Payslips" : `Payslip ${rows[0]?.employee_id || ""}`;
   const period = `${formatPayslipDate(options.start || el.payrollStartDate?.value)} to ${formatPayslipDate(options.end || el.payrollEndDate?.value)}`;
 
   return `<!doctype html>
@@ -4168,6 +4250,15 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
     .page:last-child{break-after:auto}
     .tools{position:fixed;right:12px;top:10px;display:flex;gap:8px;z-index:10}
     .tools button{border:1px solid #1a1a1a;background:#fff;color:#111;border-radius:4px;padding:9px 12px;font-weight:700;cursor:pointer}
+    .payrollSummaryPage h1{font-size:20px;margin:0 0 16px;overflow-wrap:anywhere}
+    .payrollSummaryPage h2{font-size:14px;margin:0 0 10px}
+    .payrollSummaryPage p{color:var(--muted);border-bottom:2px solid var(--gold);padding-bottom:14px;margin-bottom:16px}
+    .payrollSummaryTable th,.payrollSummaryTable td{border:1px solid var(--line);padding:8px;font-size:10px;overflow-wrap:anywhere}
+    .payrollSummaryTable th{background:var(--soft);text-transform:none;letter-spacing:0;color:var(--ink)}
+    .payrollSummaryTable th:first-child{width:15%}.payrollSummaryTable th:nth-child(2){width:34%}
+    .payrollSummaryTable td:nth-child(n+3),.payrollSummaryTable th:nth-child(n+3){text-align:right}
+    .payrollSummaryTable thead{display:table-header-group}.payrollSummaryTable tr{break-inside:avoid}
+    .payrollSummaryTable .payrollSummaryTotal td{background:var(--ink);color:white;font-weight:bold;print-color-adjust:exact;-webkit-print-color-adjust:exact}
     .hero{display:grid;grid-template-columns:38mm 1fr 42mm;gap:12mm;align-items:center;border-bottom:2px solid var(--ink);padding-bottom:9mm;margin-bottom:8mm}
     .logoBox{width:35mm;height:26mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .logoImg{max-width:100%;max-height:100%;object-fit:contain}
@@ -4237,7 +4328,7 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
     <button onclick="window.close()">Close</button>
   </div>
   <div class="preview">
-    ${rows.map((row) => buildPayslipPage(company, row, period)).join("")}
+    ${options.summary ? buildPayrollSummaryPage(options.summary) : rows.map((row) => buildPayslipPage(company, row, period)).join("")}
   </div>
 </body>
 </html>`;
@@ -4259,6 +4350,9 @@ function generateEmployeeDashboardPayslip() {
 }
 
 async function runPayrollReport(silent = false) {
+  payrollSummaryRun = null;
+  const summaryVersion = ++payrollSummaryRunVersion;
+  const contextVersion = jobsContextVersion;
   const company = currentCompany();
   if (!company) {
     if (!silent) alert("Select a company first.");
@@ -4322,6 +4416,8 @@ async function runPayrollReport(silent = false) {
       fetchPayrollYtdContext(company, start, end)
     ]);
     if (error) throw error;
+    if (summaryVersion !== payrollSummaryRunVersion || contextVersion !== jobsContextVersion ||
+        company.id !== currentCompany()?.id || start !== el.payrollStartDate.value || end !== el.payrollEndDate.value) return;
     companyDeductionTypes = loadedDeductionTypes;
     payrollDeductions = loadedDeductions;
     payrollAdjustments = loadedAdjustments;
@@ -4346,6 +4442,7 @@ async function runPayrollReport(silent = false) {
       activePayrollRules(),
       loadedYtdContext
     ));
+    payrollSummaryRun = { companyId: company.id, contextVersion, start, end, rows: payrollRows };
   } catch (error) {
     if (silent) console.warn("Payroll failed:", error.message || error);
     else alert(`Failed to run payroll: ${error.message || error}`);
@@ -6954,7 +7051,7 @@ function loadBillingPdfEngine() {
       reject(new Error("PDF tools could not be loaded. Check your connection and retry, or use Print / Preview."));
     };
     const timer = setTimeout(fail, 30000);
-    script.src = "./vendor/billing-pdf.js?v=1";
+    script.src = "./vendor/billing-pdf.js?v=2";
     script.async = true;
     script.onerror = fail;
     script.onload = () => {
@@ -8766,9 +8863,11 @@ el.btnEmployeeLogout.addEventListener("click", signOut);
 el.btnExportCompanyEvents.addEventListener("click", exportCompanyClockEvents);
 el.btnRunPayroll.addEventListener("click", () => runPayrollReport(false));
 el.payrollStartDate.addEventListener("change", () => {
+  payrollSummaryRun = null;
   if (isTrElectricalCompany() && el.payrollLevyWeeks) el.payrollLevyWeeks.value = "";
 });
 el.payrollEndDate.addEventListener("change", () => {
+  payrollSummaryRun = null;
   if (isTrElectricalCompany() && el.payrollLevyWeeks) el.payrollLevyWeeks.value = "";
 });
 el.btnExportPayroll.addEventListener("click", openPayslipModal);
@@ -8792,6 +8891,7 @@ el.btnToggleWorkWeekEditor.addEventListener("click", () => {
   el.btnToggleWorkWeekEditor.setAttribute("aria-label", isOpen ? "Close work week editor" : "Edit work week");
 });
 el.btnGeneratePayslip.addEventListener("click", generateSelectedPayslip);
+el.payslipEmployeeSelect.addEventListener("change", updatePayslipSelection);
 el.btnClosePayslip.addEventListener("click", closePayslipModal);
 el.btnOpenClocking.addEventListener("click", async () => {
   await bootWorkspace();

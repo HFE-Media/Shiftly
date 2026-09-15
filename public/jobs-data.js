@@ -204,11 +204,45 @@
       activity:order(arr('job_activity'),'occurred_at').map(a=>({id:a.id,type:a.event_type,summary:a.summary,actor:a.actor_name,at:a.occurred_at}))
     };
   }
-  function createSupabase({ client, getContext, readOnly = false, planning = false, execution = false, review = false }) {
+  async function compressPhoto(file) {
+    const bitmap=await createImageBitmap(file);
+    try {
+      if(!bitmap.width||!bitmap.height||bitmap.width*bitmap.height>40000000)fail('Choose a photo under 40 megapixels.','VALIDATION');
+      const ratio=Math.min(1,1920/bitmap.width,1920/bitmap.height),canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(bitmap.width*ratio));canvas.height=Math.max(1,Math.round(bitmap.height*ratio));
+      const drawing=canvas.getContext('2d');if(!drawing)fail('Photo conversion unavailable.','VALIDATION');
+      drawing.fillStyle='#fff';drawing.fillRect(0,0,canvas.width,canvas.height);drawing.drawImage(bitmap,0,0,canvas.width,canvas.height);
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.8));
+      if(!blob||blob.size>2097152)fail('Choose a smaller photo.','VALIDATION');
+      return blob;
+    } finally {bitmap.close();}
+  }
+  function createSupabase({ client, getContext, readOnly = false, planning = false, execution = false, review = false, photoPilot = false, photoEndpoint = '' }) {
     let generation = 0;
+    const workerEndpoint = /^https:\/\/shiftly-jobs-photos\.[a-z0-9-]+\.workers\.dev\/photos$/.test(photoEndpoint) ? photoEndpoint : '';
+    const pilotEnabled = () => (workerEndpoint && canOpen(getContext())) || (photoPilot && ['localhost','127.0.0.1'].includes(globalThis.location?.hostname) && getContext()?.companyId === '7e7aefc5-52c2-4cc7-b649-cf255af8c2e3');
     const context = () => { const c=getContext(); if(!canOpen(c)) fail('Jobs access denied','42501'); return {...c}; };
     const same = (c, g) => { const latest=getContext(); if(g!==generation || latest?.companyId!==c.companyId || latest?.userId!==c.userId || latest?.role!==c.role || latest?.employeeId!==c.employeeId || latest?.version!==c.version || !canOpen(latest)) fail('Company or session changed','42501'); };
     async function query(build) { const c=context(),g=generation; const {data,error}=await build(c); same(c,g); if(error) throw error; return data; }
+    async function photoRequest(body, imageBlob) {
+      const c=context(),g=generation;
+      if(!pilotEnabled()) fail('Photo pilot unavailable','42501');
+      const {data,error}=await client.auth.getSession();same(c,g);
+      if(error||!data?.session?.access_token)fail('Sign in again','42501');
+      const metadata={...body,companyId:c.companyId};
+      const headers={'Content-Type':imageBlob?'image/jpeg':'application/json',Authorization:`Bearer ${data.session.access_token}`};
+      if(imageBlob)headers['X-Photo-Metadata']=encodeURIComponent(JSON.stringify(metadata));
+      const response=await fetch((workerEndpoint||'/api/jobs-photos')+(imageBlob?'/upload':''),{method:'POST',cache:'no-store',credentials:'omit',headers,body:imageBlob||JSON.stringify(metadata),signal:AbortSignal.timeout(90000)});
+      const result=await response.json();same(c,g);
+      if(!response.ok) { const code=response.status===403||response.status===401?'42501':response.status===409?'40001':response.status===503?'VALIDATION':response.status>=500?'NETWORK_ERROR':'VALIDATION';fail(result.message||'Photo request failed',code); }
+      return result;
+    }
+    async function withPhotoUrls(job) {
+      if(!pilotEnabled()||!job.photos.length)return job;
+      try {const result=await photoRequest({action:'view',jobId:job.id,photoIds:job.photos.filter(p=>p.storage_provider==='r2').map(p=>p.id)});
+        return {...job,photos:job.photos.map(p=>({...p,photoUrl:result.urls[p.id]||''}))};
+      }catch(error){if(error.code==='42501')throw error;return {...job,photoError:'Photos could not be loaded. Reopen this Job to retry.'};}
+    }
     const table = async (name,jobId) => {
       const c=context(),g=generation,all=[];
       // Never silently truncate a historical card at the server's row cap.
@@ -238,6 +272,16 @@
     const args = (id,revision) => ({p_job_id:id,p_revision:revision});
     const api = {
       mode:'supabase', capabilities:Object.freeze({mediaPersistence:false}), clear(){generation++;},
+      async addPhoto(id,revision,data) {
+        const c=context(),g=generation;
+        if(!pilotEnabled()||c.role!=='supervisor')fail('Assigned Supervisor required','42501');
+        const file=data.file;
+        if(!file?.size||file.size>8*1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type))fail('Choose a JPEG, PNG or WebP photo smaller than 8 MB.','VALIDATION');
+        if(workerEndpoint){const blob=await compressPhoto(file);same(c,g);return photoRequest({action:'upload',jobId:id,revision,photoId:data.photoId,category:data.category,note:data.note},blob);}
+        const bytes=new Uint8Array(await file.arrayBuffer());same(c,g);
+        let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+        return photoRequest({action:'upload',jobId:id,revision,photoId:data.photoId,category:data.category,note:data.note,image:btoa(binary)});
+      },
       addMaterial(id,revision,data) {
         const description=String(data.description||'').trim(),unit=String(data.unit||'').trim(),quantity=Number(data.quantity);
         if(!description||!unit||!Number.isFinite(quantity)||quantity<=0)fail('Description, unit and positive quantity required');
@@ -308,12 +352,13 @@
         const c=context(),g=generation;
         const rows=await query(c=>client.from('jobs').select('*').eq('company_id',c.companyId).eq('id',id).single());
         if(!rows) fail('Job no longer available','PGRST116');
-        if(rows.lifecycle_status==='completed') { const snapshots=await table('job_completion_snapshots',id); same(c,g); if(!snapshots.length) fail('Completed Job snapshot is missing'); return normalize(snapshots[0].payload); }
+        if(rows.lifecycle_status==='completed') { const snapshots=await table('job_completion_snapshots',id); same(c,g); if(!snapshots.length) fail('Completed Job snapshot is missing'); const job=await withPhotoUrls(normalize(snapshots[0].payload));same(c,g);return job; }
         const names=['job_assignments','job_time_entries','job_work_days','job_materials','job_test_results','job_notes','job_activity',...(readOnly || planning || execution ? [] : ['job_photos','job_client_signoffs'])];
+        if(pilotEnabled()&&!names.includes('job_photos'))names.push('job_photos');
         const values=await Promise.all(names.map(name=>table(name,id))); same(c,g);
         const latest=await query(c=>client.from('jobs').select('revision').eq('company_id',c.companyId).eq('id',id).single());
         if(latest.revision!==rows.revision) fail('Job changed while loading','40001');
-        return normalize({job:rows,...Object.fromEntries(names.map((n,i)=>[n,values[i]]))});
+        const job=await withPhotoUrls(normalize({job:rows,...Object.fromEntries(names.map((n,i)=>[n,values[i]]))}));same(c,g);return job;
       },
       create:async data=>summary(normalize({job:await rpc('create_job_with_team',{p_data:{title:data.title,client_name:data.clientName,client_contact_name:data.clientContactName,client_email:data.clientEmail,client_contact_phone:data.clientPhone,site_id:data.siteId || null,service_address:data.serviceAddress,description:data.description,priority:data.priority},p_team:data.teamIds,p_lead:data.leadId,p_schedule:data.scheduleRequested === true,p_start:(data.scheduleRequested === true) && data.scheduledDate ? `${data.scheduledDate}T${data.scheduledTime || '08:00'}:00+02:00` : null})})),
       assign:(id,r,e,role='member')=>rpc('assign_job_employee',{...args(id,r),p_employee_id:e,p_assignment_role:role}),
@@ -334,7 +379,7 @@
       setEntitlement(companyId,value) { if(readOnly || getContext()?.platformAdmin!==true) fail('Platform administrator required','42501'); return client.from('companies').update({jobs_enabled:value===true}).eq('id',companyId).select('id,jobs_enabled').single(); }
     };
     // UI receives no write methods at all during read-only integration.
-    if(planning||execution||review)return Object.freeze(Object.fromEntries(['mode','list','dashboard','detail','clear',...(planning?['directories','create','assign','replaceLead','unassign','schedule']:[]),...(execution?['workEligibility','start','finish','adminCloseSession','addMaterial']:[]),...(review?['submit','resubmit','returnCorrection','approve','cancel']:[])].map(key=>[key,api[key]]).concat([['capabilities',Object.freeze({planning,execution,review,mediaPersistence:false})]])));
+    if(planning||execution||review)return Object.freeze(Object.fromEntries(['mode','list','dashboard','detail','clear',...(planning?['directories','create','assign','replaceLead','unassign','schedule']:[]),...(execution?['workEligibility','start','finish','adminCloseSession','addMaterial']:[]),...(execution&&pilotEnabled()?['addPhoto']:[]),...(review?['submit','resubmit','returnCorrection','approve','cancel']:[])].map(key=>[key,api[key]]).concat([['capabilities',Object.freeze({planning,execution,review,mediaPersistence:false,photos:pilotEnabled()})]])));
     return readOnly ? Object.freeze({mode:'supabase',list:api.list,dashboard:api.dashboard,detail:api.detail,clear:api.clear,capabilities:Object.freeze({readOnly:true,mediaPersistence:false})}) : api;
   }
   // Preparation hook only: host explicitly mounts this in PLATFORM settings.

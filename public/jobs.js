@@ -281,6 +281,7 @@
       team:teamDirectory, leads:teamDirectory.filter(p=>/supervisor/i.test(p.role)) };
   }
   function mediaAvailable() { return isMockMode; }
+  function photosAvailable() { return isMockMode || liveAdapter?.capabilities.photos === true; }
   let pendingAction = false;
   let contextKey = "";
   let contextGeneration = 0;
@@ -849,13 +850,53 @@
     if (!active) return panel("Today's work", "", `<div class="jobsTodayEmpty"><i class="ph ph-play-circle"></i><b>${job.status === "scheduled" ? "Start this Job to begin today's work." : "Continue this Job to begin a new work day."}</b><button class="platformBtn inline jobsBtn primary" type="button" data-action="${isMockMode ? 'start' : 'execute-start'}">${job.status === "scheduled" ? "Start Job" : "Continue Job"}</button></div>`);
     const draft = job.currentDraft || (!isMockMode && liveDrafts.get(job.id)) || { work: "", notes: "" };
     return `<form id="jobsTodayForm" class="jobsTodayForm"><div class="jobsTodayHead"><div><span>Today's work</span><h2>${localDate(new Date().toISOString().slice(0, 10))}</h2></div><span class="mutedText">Session started ${localDateTime(active.startedAt)}</span></div><label class="jobsLabel jobsWorkDescription">Work Performed<textarea class="jobsInput platformInput" name="todayWork" required placeholder="Describe the work completed today">${h(draft.work)}</textarea></label>
-      <div class="jobsGroupedGrid jobsTodayRecords">${materialsTab(job, !isMockMode && !canAddMaterial(job))}${testingTab(job, !isMockMode)}</div>${photosTab(job, !isMockMode)}
+      <div class="jobsGroupedGrid jobsTodayRecords">${materialsTab(job, !isMockMode && !canAddMaterial(job))}${testingTab(job, !isMockMode)}</div>${photosTab(job, !isMockMode && !canAddMaterial(job))}
       <label class="jobsLabel jobsOutstandingNotes">Notes / Outstanding Work<textarea class="jobsInput platformInput" name="todayNotes" placeholder="What remains to be done? Include access notes or handover details.">${h(draft.notes)}</textarea></label>
       <div class="jobsTodayFinish"><div><b>Ready to finish this session?</b><span>Save this work record. The Job stays open for another day.</span></div><button class="platformBtn inline jobsBtn primary" type="submit"><i class="ph ph-stop-circle"></i>Finish Work for Today</button></div></form>`;
   }
   function materialsTab(job, readOnly) { return panel("Materials used", "", dataRows(job.materials, (item) => `<div><b>${h(item.description)}</b><span>${h(item.by)} · ${localDateTime(item.addedAt)}</span></div><strong>${h(item.quantity)} ${h(item.unit)}</strong>`), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-material"><i class="ph ph-plus"></i>Add material</button>` : ""); }
   function testingTab(job, readOnly) { return panel("Testing & results", "", dataRows(job.testing, (item) => `<div><b>${h(item.description)}</b><span>${h(item.note || "No additional note")} · ${h(item.by)}</span></div><strong>${h(item.result)}</strong>`), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-test"><i class="ph ph-plus"></i>Add result</button>` : ""); }
-  function photosTab(job, readOnly) { if (!mediaAvailable()) return panel("Photos", "", '<p>Media will be available in a later phase.</p><button type="button" disabled>Add photo</button>'); return panel("Photos", "", job.photos.length ? `<div class="jobsPhotoGrid">${job.photos.map((item) => `<article class="jobsPhoto"><div class="jobsPhotoVisual"><i class="ph ph-image"></i></div><div class="jobsPhotoMeta"><b>${h(item.category)}</b><span>${h(item.note || "No note")} · ${localDateTime(item.at)}</span></div></article>`).join("")}</div>` : empty("camera", "No photos added", "Before, During, After and Other photos will appear here."), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-photo"><i class="ph ph-camera"></i>Add photo</button>` : ""); }
+  function photoImage(item, paper=false) {
+    return item.photoUrl && /^https:\/\//.test(item.photoUrl) ? `<a href="${h(item.photoUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${h(item.category)} photo"><img src="${h(item.photoUrl)}" alt="${h(item.note || item.category + ' photo')}" referrerpolicy="no-referrer" style="width:100%;${paper?'height:auto;object-fit:contain':'height:160px;object-fit:cover'}" /></a>` : '<div class="jobsPhotoVisual"><i class="ph ph-image"></i></div>';
+  }
+  function paperPhotos(job) {
+    const figures = job.photos.filter(item => item.photoUrl).map(item => {
+      const category = String(item.category || 'Other');
+      const note = String(item.note || '').trim();
+      const caption = category.charAt(0).toUpperCase() + category.slice(1);
+      return `<figure class="jobsPaperPhoto">${photoImage(item,true)}<figcaption>${h(caption)}${note ? ` · ${h(note)}` : ''}</figcaption></figure>`;
+    });
+    const rows = [];
+    for (let i = 0; i < figures.length; i += 2) rows.push(`<div class="jobsPaperPhotoRow">${figures.slice(i, i + 2).join('')}${i + 1 === figures.length ? '<div class="jobsPaperPhotoSpacer"></div>' : ''}</div>`);
+    return `<div class="jobsPaperSection jobsPaperPhotos"><div class="jobsPaperPhotoStart"><h3>Photos</h3><p>${job.photos.length} photo${job.photos.length === 1 ? '' : 's'}</p>${rows.shift() || ''}</div>${rows.join('')}${job.photoError ? `<p>${h(job.photoError)}</p>` : ''}</div>`;
+  }
+  function photoPreview(job) {
+    return `<div class="jobsPhotoPreview"><div class="jobsPhotoGrid">${job.photos.slice(0,3).map((item,index) => `<button type="button" class="jobsPhoto" data-action="photo-gallery" data-photo-id="${h(item.id)}" aria-label="Open photo gallery, ${h(item.category)}, ${job.photos.length} photos"><span class="jobsPhotoThumb">${item.photoUrl && /^https:\/\//.test(item.photoUrl) ? `<img src="${h(item.photoUrl)}" alt="${h(item.note || item.category)}" referrerpolicy="no-referrer">` : '<span>Photo unavailable</span>'}${job.photos.length>index+1 ? `<span class="jobsPhotoMore">+${job.photos.length-index-1}</span>` : ''}</span><span class="jobsPhotoMeta"><b>${h(item.category)}</b>${item.note ? `<span>${h(item.note)}</span>` : ''}</span></button>`).join('')}</div></div>`;
+  }
+  function photosTab(job, readOnly) { if (!photosAvailable()) return panel("Photos", "", '<p>Media will be available in a later phase.</p><button type="button" disabled>Add photo</button>'); return panel("Photos", "", `${job.photoError?`<p role="status">${h(job.photoError)}</p>`:''}${job.photos.length ? photoPreview(job) : empty("camera", "No photos added", "Before, During, After and Other photos will appear here.")}`, !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-photo"><i class="ph ph-camera"></i>Add photo</button>` : ""); }
+  function openPhotoGallery(photoId) {
+    const job = selectedJob();
+    if (!job || !photosAvailable() || !job.photos.length) return;
+    let index = Math.max(0, job.photos.findIndex(item => item.id === photoId));
+    modalSubmit = null; modalPlanning = false;
+    modal.innerHTML = `<div class="jobsModalCard jobsGallery" role="dialog" aria-modal="true" aria-labelledby="jobsModalTitle"><div class="jobsModalHead"><h2 id="jobsModalTitle">Photos</h2><button class="jobsIconBtn" type="button" data-modal-close aria-label="Close gallery">✕</button></div><div class="jobsModalBody" data-gallery-content></div><div class="jobsModalActions"><button class="jobsIconBtn" type="button" data-gallery-prev aria-label="Previous photo" title="Previous photo"><i class="ph ph-arrow-left" aria-hidden="true"></i></button><span data-gallery-count aria-live="polite"></span><button class="jobsIconBtn" type="button" data-gallery-next aria-label="Next photo" title="Next photo"><i class="ph ph-arrow-right" aria-hidden="true"></i></button></div></div>`;
+    const render = () => {
+      const item = job.photos[index];
+      modal.querySelector('[data-gallery-content]').innerHTML = `${photoImage(item,true)}<p>${h(item.category)}${item.note ? ` · ${h(item.note)}` : ''}</p><small>${h(localDateTime(item.at))}</small>`;
+      modal.querySelector('[data-gallery-count]').textContent = `${index+1} / ${job.photos.length}`;
+      modal.querySelector('[data-gallery-prev]').disabled = index === 0;
+      modal.querySelector('[data-gallery-next]').disabled = index === job.photos.length-1;
+      const image = modal.querySelector('img');
+      if (image) image.addEventListener('error', () => { image.parentElement.textContent = 'Photo unavailable. Close and reopen the Job to refresh its link.'; }, {once:true});
+    };
+    const move = delta => { index = Math.max(0,Math.min(job.photos.length-1,index+delta)); render(); };
+    modal.querySelector('[data-gallery-prev]').addEventListener('click',()=>move(-1));
+    modal.querySelector('[data-gallery-next]').addEventListener('click',()=>move(1));
+    modal.querySelector('.jobsGallery').addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();move(event.key==='ArrowLeft'?-1:1);}});
+    render(); modal.hidden = false; modal.setAttribute('aria-hidden','false');
+    if (workspace) workspace.inert = true;
+    modal.querySelector('[data-modal-close]').focus();
+  }
   function notesTab(job, readOnly) { return panel("Notes", "", job.notes.length ? `<div class="jobsTimeline">${job.notes.slice().reverse().map((item) => timeline(item.by, item.text, item.at)).join("")}</div>` : empty("note", "No notes", "Notes will appear here."), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" data-action="add-note"><i class="ph ph-plus"></i>Add note</button>` : ""); }
   function signoffTab(job, readOnly) {
     if (!mediaAvailable()) return panel('Client sign-off', '', '<p>Signature capture will be available in a later phase.</p><button type="button" disabled>Capture sign-off</button>');
@@ -913,7 +954,7 @@
       <div class="jobsPaperSection"><h3>Notes</h3>${job.notes.map(n=>`<p>${h(n.text)}</p>`).join('')||'<p>None recorded.</p>'}</div>
       <div class="jobsPaperSection"><h3>Work sessions</h3>${paperTable(["Team member", "Start", "Finish", "Duration"], job.sessions.map((item) => [item.employeeName, localDateTime(item.startedAt), item.endedAt ? localDateTime(item.endedAt) : "Open", duration(minutesBetween(item.startedAt, item.endedAt))]))}<p style="margin-top:10px"><b>Total Job time: ${duration(totalMinutes(job))}</b></p></div>
       <div class="jobsPaperSection"><h3>Team</h3><p>${job.team.map((person) => `${h(person.name)} (${h(person.employeeId)})`).join(", ")}</p></div>
-      <div class="jobsPaperSection"><h3>Photos</h3><p>${job.photos.length} photo record${job.photos.length === 1 ? "" : "s"}: ${job.photos.map((item) => h(item.category)).join(", ") || "None"}</p></div>
+      ${paperPhotos(job)}
       <div class="jobsPaperSection jobsPaperGrid"><div><span>Client sign-off</span><b>${job.signoff ? h(job.signoff.unavailable ? `Unavailable — ${job.signoff.reason}` : job.signoff.clientName) : "Not captured"}</b></div><div><span>Completion</span><b>${job.completion ? `${h(job.completion.by)} · ${localDateTime(job.completion.at)}` : "Pending"}</b></div></div>
       <div class="jobsPaperFooter"><span>${h(company.name)}</span><span>Generated by Shiftly</span></div>
     </div>`;
@@ -1093,7 +1134,7 @@
     finally{if(adapter===liveAdapter&&key===JSON.stringify(liveContext())){planningPending=false;lockPlanningForm(false);}}
   }
   async function planningMutation(method,args,jobId='') {
-    if(!canOperate()||!['create','assign','replaceLead','unassign','schedule','start','finish','adminCloseSession','submit','resubmit','returnCorrection','approve','cancel','addMaterial'].includes(method))throw new Error('Workflow unavailable.');
+    if(!canOperate()||!['create','assign','replaceLead','unassign','schedule','start','finish','adminCloseSession','submit','resubmit','returnCorrection','approve','cancel','addMaterial','addPhoto'].includes(method))throw new Error('Workflow unavailable.');
     if(planningRefreshRequired)throw new Error('Refresh authoritative state before retrying.');
     if(method!=='create') {
       const job=liveDetail;
@@ -1108,7 +1149,7 @@
       if(method==='adminCloseSession'&&(!['in_progress','correction_required'].includes(job.status)||!openSessions(job).some(s=>s.id===args[2])||!args[3]?.trim()))throw new Error('Open session and recovery reason required.');
     }
     if(['submit','resubmit','returnCorrection','approve','cancel'].includes(method)){if(!reviewAllowed(method))throw new Error('This lifecycle action is no longer available. Refresh the Job.');}
-    else if(method==='addMaterial'){if(!canAddMaterial())throw new Error('Own active work session required to add materials.');}
+    else if(method==='addMaterial'||method==='addPhoto'){if(!canAddMaterial()||(method==='addPhoto'&&!photosAvailable()))throw new Error('Own active work session required to add evidence.');}
     else if(['start','finish'].includes(method)){if(!canExecute())throw new Error('Assigned active Supervisor required.');}
     else if(!canPlan())throw new Error('Manager required.');
     const key=JSON.stringify(liveContext()),adapter=liveAdapter;
@@ -1267,7 +1308,17 @@
   function addTestModal() { simpleEntryModal("Test result", { title:"Add Test / Check",submitLabel:"Add Result",
     body: `<div class="jobsFormGrid">${label("description", "Test / check description", input("text", "e.g. Insulation resistance", true), true)}${label("result", "Result", input("text", "PASS / reading", true))}${label("note", "Note", input("text", "Optional supporting detail"))}</div>`,
     save:(job,data)=>dataService.evidence(job.id,job.revision,"test",{description:data.get("description"),result:data.get("result"),note:data.get("note")}) }); }
-  function addPhotoModal() { if(!mediaAvailable()){toast('Media will be available in a later phase.');return;} simpleEntryModal("Photo", { title:"Add Photo",submitLabel:"Add Photo",
+  function addPhotoModal() {
+    if(!isMockMode) {
+      if(!photosAvailable()||!canAddMaterial())return toast('Continue your Job before adding a photo.');
+      const job=liveDetail,photoId=crypto.randomUUID();
+      openModal({planning:true,title:'Add Photo',submitLabel:'Upload Photo',copy:'Demo Company test · JPEG, PNG or WebP up to 8 MB. Photos are compressed and stored privately.',body:`<div class="jobsFormGrid">${label('file','Photo','<input class="jobsInput" name="NAME" type="file" accept="image/jpeg,image/png,image/webp" required />',true)}${label('category','Category','<select class="jobsInput" name="NAME"><option value="before">Before</option><option value="during">During</option><option value="after">After</option><option value="other">Other</option></select>')}${label('note','Optional note','<input class="jobsInput" name="NAME" maxlength="500" />',true)}<p class="wide" role="status" id="jobsPhotoProgress">Choose a photo to upload.</p></div>`,onSubmit:async data=>{
+        const progress=modal.querySelector('#jobsPhotoProgress');if(progress)progress.textContent='Uploading and saving photo…';
+        await planningMutation('addPhoto',[job.id,liveDetail.revision,{photoId,file:data.get('file'),category:data.get('category'),note:data.get('note')||''}],job.id);
+        if(progress?.isConnected)progress.textContent='Check the message above before retrying.';
+      }});return;
+    }
+    if(!mediaAvailable()){toast('Media will be available in a later phase.');return;} simpleEntryModal("Photo", { title:"Add Photo",submitLabel:"Add Photo",
     body: `<div class="jobsFormGrid">${label("category", "Category", `<select class="jobsInput" name="NAME"><option>Before</option><option>During</option><option>After</option><option>Other</option></select>`)}${label("note", "Optional note", input("text", "What does the photo show?"), true)}</div>`,
     save:(job,data)=>dataService.evidence(job.id,job.revision,"photo",{category:data.get("category"),note:data.get("note")}) }); }
   function addNoteModal() { simpleEntryModal("Note", { title:"Add Job Note",submitLabel:"Add Note",
@@ -1321,7 +1372,7 @@
       if (!window.ShiftlyJobsData.canOpen(context)) { toast("Jobs is disabled or unavailable for this account."); return; }
       if (typeof sb === 'undefined') { toast('Existing Shiftly connection is unavailable.'); return; }
       liveAdapter?.clear();
-      liveAdapter=window.ShiftlyJobsData.createSupabase({client:sb,getContext:liveContext,readOnly:true,planning:['owner','admin'].includes(context.role),execution:true,review:true});
+      liveAdapter=window.ShiftlyJobsData.createSupabase({client:sb,getContext:liveContext,readOnly:true,planning:['owner','admin'].includes(context.role),execution:true,review:true,photoPilot:isLocalDevelopment&&new URLSearchParams(window.location.search).get('jobsPhotos')==='1',photoEndpoint:window.SHIFTLY_JOBS_PHOTO_ENDPOINT||''});
       role=context.role==='supervisor'?'supervisor':'admin';
       watchHostNavigation();
       hideOperationalShells();shell.hidden=false;screen='dashboard';
@@ -1414,7 +1465,7 @@
   function bindEvents() {
     document.getElementById("btnOpenJobsAdmin")?.addEventListener("click", () => openJobs("admin"));
     document.getElementById("btnOpenJobsSupervisor")?.addEventListener("click", () => openJobs("supervisor"));
-    root.addEventListener("click", event => { const action = event.target.closest("[data-action]")?.dataset.action; if(!isMockMode&&action==="add-material"){handleRootClick(event);return;} if (["start","finish","submit","return","approve","create","add-material","add-test","add-photo","add-note","signoff"].includes(action)) performAction(() => handleRootClick(event)); else handleRootClick(event); });
+    root.addEventListener("click", event => { const action = event.target.closest("[data-action]")?.dataset.action; if(!isMockMode&&['add-material','add-photo'].includes(action)){handleRootClick(event);return;} if (["start","finish","submit","return","approve","create","add-material","add-test","add-photo","add-note","signoff"].includes(action)) performAction(() => handleRootClick(event)); else handleRootClick(event); });
     root.addEventListener("keydown", (event) => {
       const row = event.target.closest("tr[data-action=open]"); if (row && ["Enter", " "].includes(event.key)) { event.preventDefault(); openJob(row.dataset.id); }
       const tab = event.target.closest("[role=tab]"); if (tab && ["ArrowLeft", "ArrowRight"].includes(event.key)) { const list = [...tab.closest('[role="tablist"]').querySelectorAll('[role="tab"]')]; const index = list.indexOf(tab); const next = list[(index + (event.key === "ArrowRight" ? 1 : -1) + list.length) % list.length]; next.focus(); next.click(); }
@@ -1461,6 +1512,7 @@
   function handleRootClick(event) {
     const button = event.target.closest("[data-action]"); if (!button) return;
     const action = button.dataset.action;
+    if (action === 'photo-gallery') return openPhotoGallery(button.dataset.photoId);
     if (!isMockMode) {
       if(button.disabled)return;
       if(action==='host-nav')return navigateHost(button.dataset.hostId);
@@ -1469,6 +1521,7 @@
       if(action==='execute-finish')return openExecution('finish');
       if(action==='execute-recover')return openExecution('recover',button.dataset.session);
       if(action==='add-material')return addMaterialModal();
+      if(action==='add-photo')return addPhotoModal();
       if(action==='plan-create'||action==='create')return openPlanning('create');
       if(action==='plan-team')return openPlanning('team');
       if(action==='plan-schedule')return openPlanning('schedule');

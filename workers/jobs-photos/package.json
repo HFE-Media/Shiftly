@@ -1,0 +1,11 @@
+{
+  "name": "shiftly-jobs-photo-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "4.132.0"
+  }
+}
