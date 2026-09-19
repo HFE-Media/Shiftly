@@ -52,7 +52,9 @@
       employee_id: String(row.employee_id), gross_remuneration: money(snapshot.gross || 0),
       retirement_fund_contributions: sum('provident'),
       paye_deducted: rules.calculate_paye ? sum('tax') : '0.00',
-      employee_uif: rules.calculate_uif ? sum('uif') : '0.00', document_row: snapshot
+      employee_uif: rules.calculate_uif ? sum('uif') : '0.00',
+      ...(row.employer_uif !== undefined ? {employer_uif:money(row.employer_uif),uif_liable_remuneration:money(row.uif_liable_remuneration)} : {}),
+      document_row: snapshot
     };
   }
   function context(record, cumulative, year) {

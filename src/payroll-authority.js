@@ -36,6 +36,31 @@
     const adjusted=engine.attachAdjustmentsToPayrollRows(engine.calculatePayroll(input.events,input.employees,rules),input.adjustments,rules);
     engine.validatePayrollYtdContinuity(adjusted,history,selection.end);
     const rows=engine.attachDeductionsToPayrollRows(adjusted,engine.trElectricalAutomaticLevyDeductions(adjusted,input.deductions,levy,company),rules,history);
+    // Only the authoritative input supplies monthly consumption; never infer it from YTD.
+    for(const row of rows){
+      const cents=value=>Number(History.money(value))*100;
+      let liable=0, contribution=0;
+      if(rules.calculate_uif){
+        const month=input.uif_month;
+        const used=month?.employees?.find(e=>e.employee_id===row.employee_id);
+        if(month?.month!==selection.end.slice(0,7)+'-01'||!used)fail('Monthly UIF history unavailable. Refresh payroll.');
+        if(used.ambiguous)fail('This UIF month contains legacy payroll with incomplete UIF information. Monthly UIF cannot be calculated safely.');
+        liable=Math.round(cents(row.gross||0));
+        const remaining=Math.max(0,1771200-Math.round(cents(used.liable)));
+        const remainingContribution=Math.max(0,17712-Math.round(cents(used.employee)),0);
+        const remainingEmployer=Math.max(0,17712-Math.round(cents(used.employer)));
+        contribution=Math.min(Math.round(Math.min(liable,remaining)/100),remainingContribution,remainingEmployer);
+      }
+      row.uif_liable_remuneration=(liable/100).toFixed(2);
+      row.employer_uif=(contribution/100).toFixed(2);
+      row.combined_uif=(contribution*2/100).toFixed(2);
+      if(rules.calculate_uif){
+        row.deductions=row.deductions.filter(d=>String(d.description||'').toLowerCase()!=='uif');
+        row.deductions.push({employee_id:row.employee_id,description:'UIF',amount:contribution/100,active:true,statutory:true});
+      }
+      row.totalDeductions=row.deductions.reduce((sum,d)=>sum+Number(d.amount),0);
+      row.net=Math.max(0,Number(row.gross)-row.totalDeductions);
+    }
     return {version:History.VERSION,start:selection.start,end:selection.end,revision:input.history.revision,
       company:{id:company.id,name:company.name,logo_url:company.frozen_logo||''},rules,levy,
       rows:rows.map(row=>History.employeeSnapshot(row,rules))};
