@@ -9,6 +9,7 @@ function fixture() {
     currentUser: { id: 'user-a' }, jobsContextVersion: 1,
     currentCompany: () => ({ id: 'company-a', name: 'Demo Services' }),
     canUseCompanyDashboard: () => true,
+    sharedPayrollEngine: () => require('../public/payroll-engine.js').create(),
     payrollSummaryBusy: false, payrollSummaryRun: null, payrollRows: [],
     moneyNumber: value => Number(value || 0),
     el: { payrollStartDate: { value: '2026-09-01' }, payrollEndDate: { value: '2026-09-07' },
@@ -25,7 +26,7 @@ function fixture() {
   vm.createContext(context);
   vm.runInContext(source.slice(source.indexOf('function normaliseDeduction('), source.indexOf('function normaliseDeductionType(')), context);
   vm.runInContext(source.slice(source.indexOf('function buildPayrollSummaryModel('), source.indexOf('async function generateSelectedPayslip(')), context);
-  vm.runInContext(source.slice(source.indexOf('function buildPayrollSummaryPage('), source.indexOf('function generateEmployeeDashboardPayslip(')), context);
+  vm.runInContext(source.slice(source.indexOf('function buildPayrollSummaryPage('), source.indexOf('async function generateEmployeeDashboardPayslip(')), context);
   vm.runInContext(source.slice(source.indexOf('function updatePayslipSelection('), source.indexOf('function closePayslipModal(')), context);
   context.payrollRows = [{ employee_id: 'E001', employee_name: 'Sérgio Example', gross: 1234.56,
     deductions: [{ amount: 34.56 }, { amount: 999, active: false }] }];
@@ -79,7 +80,7 @@ test('single dropdown action changes labels and blocked popups recover', () => {
   c.el.payslipEmployeeSelect.value = '__all__'; c.updatePayslipSelection();
   assert.equal(c.el.btnGeneratePayslip.textContent, 'Generate Payslip');
   c.usesPayrollYtd = () => true; c.updatePayslipSelection();
-  assert.equal(c.el.btnGeneratePayslip.textContent, 'Finalise & Generate Payslip');
+  assert.equal(c.el.btnGeneratePayslip.textContent, 'Generate Payslip');
   c.el.payslipEmployeeSelect.value = '__summary__'; c.updatePayslipSelection();
   assert.equal(c.el.btnGeneratePayslip.textContent, 'Generate Summary');
   c.window.open = () => null; c.generatePayrollSummary();

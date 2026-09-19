@@ -110,10 +110,17 @@ const SA_UIF_MONTHLY_CEILING = 17712;
 const SA_UIF_RATE = 0.01;
 const SA_RETIREMENT_FUND_ANNUAL_LIMIT = 430000;
 
+function sharedPayrollEngine() {
+  return window.ShiftlyPayrollEngine.create({company:currentCompany(),rules:companyPayrollRules,
+    employees:companyAdminEmployees,deductionTypes:companyDeductionTypes,
+    start:el.payrollStartDate?.value||'',end:el.payrollEndDate?.value||''});
+}
+
 /***********************
  * CLIENT + STATE
  ***********************/
-const hasSupabaseConfig = /^https:\/\/.+\.supabase\.co$/.test(SUPABASE_URL) && SUPABASE_ANON_KEY.length > 40;
+const hasSupabaseConfig = (/^https:\/\/.+\.supabase\.co$/.test(SUPABASE_URL) ||
+  window.ShiftlyPayrollHistory?.localBackend(APP_CONFIG, window.location)) && SUPABASE_ANON_KEY.length > 40;
 const sb = hasSupabaseConfig ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 let currentUser = null;
@@ -1741,11 +1748,8 @@ function exportCompanyClockEvents() {
   URL.revokeObjectURL(url);
 }
 
-function localDateInputValue(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function localDateInputValue(...args) {
+  return sharedPayrollEngine().localDateInputValue(...args);
 }
 
 function setDefaultPayrollDates() {
@@ -1845,142 +1849,40 @@ const DEFAULT_PAYROLL_RULES = Object.freeze({
   lunch_deduction_minutes: 0
 });
 
-function normaliseTimeValue(value, fallback = null) {
-  if (typeof value !== "string") return fallback;
-  const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-  if (!match) return fallback;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-    return fallback;
-  }
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+function normaliseTimeValue(...args) {
+  return sharedPayrollEngine().normaliseTimeValue(...args);
 }
 
-function timeValueToMinutes(value) {
-  const time = normaliseTimeValue(value);
-  if (!time) return null;
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
+function timeValueToMinutes(...args) {
+  return sharedPayrollEngine().timeValueToMinutes(...args);
 }
 
-function dateAtPayrollMinutes(date, minutes) {
-  const next = new Date(date);
-  next.setHours(0, minutes, 0, 0);
-  return next;
+function dateAtPayrollMinutes(...args) {
+  return sharedPayrollEngine().dateAtPayrollMinutes(...args);
 }
 
-function payrollEventTime(event, rules) {
-  const raw = String(event?.created_at || "");
-  return new Date(raw);
+function payrollEventTime(...args) {
+  return sharedPayrollEngine().payrollEventTime(...args);
 }
 
-function mixocronWallEventTime(event) {
-  const raw = String(event?.created_at || "");
-  const localWallTime = raw.replace(/([+-]\d{2}:\d{2}|Z)$/i, "");
-  const parsed = new Date(localWallTime);
-  return Number.isFinite(parsed.getTime()) ? parsed : new Date(raw);
+function mixocronWallEventTime(...args) {
+  return sharedPayrollEngine().mixocronWallEventTime(...args);
 }
 
-function chooseMixocronDayTimes(row, rules, paidStartMinutes, normalEndMinutes, fridayNormalEndMinutes) {
-  const rawIns = row.ins.map((event) => mixocronWallEventTime(event)).filter((time) => Number.isFinite(time.getTime()));
-  const rawOuts = row.outs.map((event) => mixocronWallEventTime(event)).filter((time) => Number.isFinite(time.getTime()));
-  const localIns = row.ins.map((event) => payrollEventTime(event)).filter((time) => Number.isFinite(time.getTime()));
-  const localOuts = row.outs.map((event) => payrollEventTime(event)).filter((time) => Number.isFinite(time.getTime()));
-  const first = (items) => items.sort((a, b) => a - b)[0] || null;
-  const last = (items) => items.sort((a, b) => b - a)[0] || null;
-  const rawFirst = first(rawIns);
-  const localFirst = first(localIns);
-  const minutesOfDay = (time) => time ? time.getHours() * 60 + time.getMinutes() : 0;
-  const rawStartsLikeUtc = rawFirst && minutesOfDay(rawFirst) < 6 * 60 + 30;
-  const score = (time) => {
-    if (!time) return Number.POSITIVE_INFINITY;
-    const target = dateAtPayrollMinutes(time, paidStartMinutes);
-    return Math.abs(time - target);
-  };
-  const useLocal = rawStartsLikeUtc || score(localFirst) < score(rawFirst);
-  const firstIn = useLocal ? localFirst : rawFirst;
-  const rawLast = last(rawOuts);
-  const localLast = last(localOuts);
-  let lastOut = useLocal ? localLast : rawLast;
-
-  if (firstIn && rawLast && localLast) {
-    const dayRule = workWeekForDate(firstIn, rules).rule;
-    const isFriday = firstIn.getDay() === 5;
-    const endMinutes = isFriday ? fridayNormalEndMinutes : normalEndMinutes;
-    const normalEnd = endMinutes === null ? null : dateAtPayrollMinutes(rawLast, endMinutes);
-    const localNormalEnd = endMinutes === null ? null : dateAtPayrollMinutes(localLast, endMinutes);
-    if (dayRule === "threshold" && normalEnd && localNormalEnd) {
-      const rawLastMinutes = minutesOfDay(rawLast);
-      lastOut = rawStartsLikeUtc && rawLastMinutes < 15 * 60 ? localLast : rawLast;
-    }
-  }
-
-  return {
-    firstIn,
-    lastOut
-  };
+function chooseMixocronDayTimes(...args) {
+  return sharedPayrollEngine().chooseMixocronDayTimes(...args);
 }
 
-function normaliseWorkWeek(input = DEFAULT_WORK_WEEK) {
-  const source = input && typeof input === "object" ? input : DEFAULT_WORK_WEEK;
-  const allowed = ["threshold", "normal", "ot1", "ot2"];
-  return WORK_WEEK_DAYS.reduce((acc, day) => {
-    const row = source[day.key] || {};
-    const hours = Number(row.normal_hours);
-    const rule = allowed.includes(row.rule) ? row.rule : DEFAULT_WORK_WEEK[day.key].rule;
-    acc[day.key] = {
-      normal_hours: Number.isFinite(hours) && hours >= 0 ? hours : DEFAULT_WORK_WEEK[day.key].normal_hours,
-      rule
-    };
-    return acc;
-  }, {});
+function normaliseWorkWeek(...args) {
+  return sharedPayrollEngine().normaliseWorkWeek(...args);
 }
 
-function workWeekForDate(date, rules) {
-  const day = WORK_WEEK_DAYS.find((item) => item.dayIndex === date.getDay());
-  return day ? rules.work_week[day.key] : { normal_hours: rules.daily_normal_hours, rule: "threshold" };
+function workWeekForDate(...args) {
+  return sharedPayrollEngine().workWeekForDate(...args);
 }
 
-function normalisePayrollRules(rules = {}) {
-  const merged = { ...DEFAULT_PAYROLL_RULES, ...(rules || {}) };
-  const numberField = (key) => {
-    const value = Number(merged[key]);
-    return Number.isFinite(value) && value >= 0 ? value : DEFAULT_PAYROLL_RULES[key];
-  };
-  const ruleField = (key, allowed) => allowed.includes(merged[key]) ? merged[key] : DEFAULT_PAYROLL_RULES[key];
-  const overtimeMethod = ["cycle_only", "daily_cycle", "day_rules"].includes(merged.overtime_method)
-    ? merged.overtime_method
-    : DEFAULT_PAYROLL_RULES.overtime_method;
-  const payrollProfile = ["standard", "mixocron"].includes(merged.payroll_profile)
-    ? merged.payroll_profile
-    : DEFAULT_PAYROLL_RULES.payroll_profile;
-  return {
-    payroll_profile: payrollProfile,
-    overtime_method: overtimeMethod,
-    weekly_normal_hours: numberField("weekly_normal_hours"),
-    fortnightly_normal_hours: numberField("fortnightly_normal_hours"),
-    monthly_normal_hours: numberField("monthly_normal_hours"),
-    ot1_multiplier: Math.max(1, numberField("ot1_multiplier")),
-    ot2_multiplier: Math.max(1, numberField("ot2_multiplier")),
-    saturday_rule: ruleField("saturday_rule", ["threshold", "normal", "ot1", "ot2"]),
-    sunday_rule: ruleField("sunday_rule", ["ot2", "ot1", "threshold", "normal"]),
-    public_holiday_rule: ruleField("public_holiday_rule", ["ot2_with_topup", "ot2", "threshold", "normal"]),
-    public_holiday_standard_hours: numberField("public_holiday_standard_hours"),
-    calculate_uif: merged.calculate_uif === true || merged.calculate_uif === "true",
-    calculate_paye: merged.calculate_paye === true || merged.calculate_paye === "true",
-    work_week_enabled: overtimeMethod !== "cycle_only" && (merged.work_week_enabled === true || merged.work_week_enabled === "true"),
-    work_week: normaliseWorkWeek(merged.work_week),
-    daily_overtime_enabled: overtimeMethod === "daily_cycle" && (merged.daily_overtime_enabled === true || merged.daily_overtime_enabled === "true"),
-    daily_normal_hours: numberField("daily_normal_hours"),
-    lunch_deduction_enabled: merged.lunch_deduction_enabled === true || merged.lunch_deduction_enabled === "true",
-    lunch_deduction_minutes: Math.max(0, Math.round(numberField("lunch_deduction_minutes"))),
-    paid_start_time: normaliseTimeValue(merged.paid_start_time, "07:30"),
-    normal_end_time: normaliseTimeValue(merged.normal_end_time, "16:30"),
-    overtime_trigger_time: normaliseTimeValue(merged.overtime_trigger_time, "16:50"),
-    friday_normal_end_time: normaliseTimeValue(merged.friday_normal_end_time, "13:30"),
-    friday_overtime_trigger_time: normaliseTimeValue(merged.friday_overtime_trigger_time, "13:50")
-  };
+function normalisePayrollRules(...args) {
+  return sharedPayrollEngine().normalisePayrollRules(...args);
 }
 
 function activePayrollRules() {
@@ -2125,564 +2027,76 @@ const SA_PUBLIC_HOLIDAYS_2026 = new Map([
   ["2026-12-26", "Day of Goodwill"]
 ]);
 
-function dateKey(date) {
-  return localDateInputValue(date);
+function dateKey(...args) {
+  return sharedPayrollEngine().dateKey(...args);
 }
 
-function isPublicHoliday(date) {
-  return SA_PUBLIC_HOLIDAYS_2026.has(dateKey(date));
+function isPublicHoliday(...args) {
+  return sharedPayrollEngine().isPublicHoliday(...args);
 }
 
-function shouldApplyPublicHolidayTopup(date) {
-  const companyId = String(currentCompany()?.id || "");
-  return !(PVS_COMPANY_IDS.has(companyId) && date.getDay() === 0);
+function shouldApplyPublicHolidayTopup(...args) {
+  return sharedPayrollEngine().shouldApplyPublicHolidayTopup(...args);
 }
 
-function datesInRange(startValue, endValue) {
-  const dates = [];
-  if (!startValue || !endValue) return dates;
-  const cursor = new Date(`${startValue}T00:00:00`);
-  const end = new Date(`${endValue}T00:00:00`);
-  while (cursor <= end) {
-    dates.push(new Date(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return dates;
+function datesInRange(...args) {
+  return sharedPayrollEngine().datesInRange(...args);
 }
 
-function normalThresholdHours(payCycle, rules = activePayrollRules()) {
-  if (payCycle === "weekly") return rules.weekly_normal_hours;
-  if (payCycle === "monthly") return rules.monthly_normal_hours;
-  return rules.fortnightly_normal_hours;
+function normalThresholdHours(...args) {
+  return sharedPayrollEngine().normalThresholdHours(...args);
 }
 
-function splitShiftByDay(start, end) {
-  const parts = [];
-  let cursor = new Date(start);
-  while (cursor < end) {
-    const nextMidnight = new Date(cursor);
-    nextMidnight.setHours(24, 0, 0, 0);
-    const partEnd = nextMidnight < end ? nextMidnight : end;
-    const hours = (partEnd - cursor) / 36e5;
-    if (hours > 0) {
-      parts.push({
-        date: new Date(cursor),
-        hours
-      });
-    }
-    cursor = partEnd;
-  }
-  return parts;
+function splitShiftByDay(...args) {
+  return sharedPayrollEngine().splitShiftByDay(...args);
 }
 
-function splitSegmentByDay(start, end, forcedRule = "") {
-  return splitShiftByDay(start, end).map((part) => ({ ...part, forcedRule }));
+function splitSegmentByDay(...args) {
+  return sharedPayrollEngine().splitSegmentByDay(...args);
 }
 
-function buildShiftPartsForPayroll(inTime, outTime, rules) {
-  if (rules.payroll_profile !== "mixocron") return splitShiftByDay(inTime, outTime);
-  const paidStartMinutes = timeValueToMinutes(rules.paid_start_time);
-  if (paidStartMinutes === null) return splitShiftByDay(inTime, outTime);
-
-  const paidStart = dateAtPayrollMinutes(inTime, paidStartMinutes);
-  const paidIn = inTime < paidStart ? paidStart : inTime;
-  if (outTime <= paidIn) return [];
-
-  const dayRule = workWeekForDate(inTime, rules).rule;
-  if (dayRule !== "threshold" || isPublicHoliday(inTime)) return splitShiftByDay(paidIn, outTime);
-
-  const isFriday = inTime.getDay() === 5;
-  const normalEndMinutes = timeValueToMinutes(isFriday ? rules.friday_normal_end_time : rules.normal_end_time);
-  const overtimeTriggerMinutes = timeValueToMinutes(isFriday ? rules.friday_overtime_trigger_time : rules.overtime_trigger_time);
-  if (normalEndMinutes === null || overtimeTriggerMinutes === null) {
-    return splitShiftByDay(paidIn, outTime);
-  }
-
-  const normalEnd = dateAtPayrollMinutes(inTime, normalEndMinutes);
-  const overtimeTrigger = dateAtPayrollMinutes(inTime, overtimeTriggerMinutes);
-
-  const parts = [];
-  const normalEndForShift = outTime >= overtimeTrigger ? normalEnd : (outTime < normalEnd ? outTime : normalEnd);
-  if (paidIn < normalEndForShift) {
-    parts.push(...splitSegmentByDay(paidIn, normalEndForShift, "normal"));
-  }
-  if (outTime >= overtimeTrigger) {
-    const otStart = paidIn > normalEnd ? paidIn : normalEnd;
-    if (otStart < outTime) parts.push(...splitSegmentByDay(otStart, outTime, "ot1"));
-  }
-
-  return parts;
+function buildShiftPartsForPayroll(...args) {
+  return sharedPayrollEngine().buildShiftPartsForPayroll(...args);
 }
 
-function buildMixocronDailyParts(employeeEvents, rules) {
-  const days = new Map();
-  let invalidSequence = 0;
-  let missingClockOut = 0;
-  const paidStartMinutes = timeValueToMinutes(rules.paid_start_time);
-  const normalEndMinutes = timeValueToMinutes(rules.normal_end_time);
-  const overtimeTriggerMinutes = timeValueToMinutes(rules.overtime_trigger_time);
-  const fridayNormalEndMinutes = timeValueToMinutes(rules.friday_normal_end_time);
-  const fridayOvertimeTriggerMinutes = timeValueToMinutes(rules.friday_overtime_trigger_time);
-  const standardLunchMinutes = rules.lunch_deduction_minutes > 0 ? rules.lunch_deduction_minutes : 30;
-
-  for (const event of employeeEvents) {
-    const action = String(event.action || "").toUpperCase();
-    const time = mixocronWallEventTime(event);
-    if (!Number.isFinite(time.getTime())) {
-      invalidSequence += 1;
-      continue;
-    }
-    const key = dateKey(time);
-    const row = days.get(key) || { date: new Date(time), ins: [], outs: [] };
-    if (action === "IN") row.ins.push(event);
-    if (action === "OUT") row.outs.push(event);
-    days.set(key, row);
-  }
-
-  const parts = [];
-  for (const row of days.values()) {
-    const { firstIn, lastOut } = chooseMixocronDayTimes(row, rules, paidStartMinutes, normalEndMinutes, fridayNormalEndMinutes);
-    if (!firstIn && !lastOut) continue;
-    if (firstIn && !lastOut) {
-      missingClockOut += 1;
-      continue;
-    }
-    if (!firstIn || lastOut <= firstIn) {
-      invalidSequence += 1;
-      continue;
-    }
-
-    const dayRule = workWeekForDate(firstIn, rules).rule;
-    const isFriday = firstIn.getDay() === 5;
-    const normalEnd = dateAtPayrollMinutes(firstIn, isFriday ? fridayNormalEndMinutes : normalEndMinutes);
-    const overtimeTrigger = dateAtPayrollMinutes(firstIn, isFriday ? fridayOvertimeTriggerMinutes : overtimeTriggerMinutes);
-    const paidStart = dateAtPayrollMinutes(firstIn, paidStartMinutes);
-    const paidIn = firstIn < paidStart ? paidStart : firstIn;
-    if (lastOut <= paidIn) continue;
-
-    if (isPublicHoliday(firstIn) || dayRule !== "threshold") {
-      const forcedRule = dayRule === "threshold" ? "" : dayRule;
-      parts.push(...splitSegmentByDay(paidIn, lastOut, forcedRule));
-      continue;
-    }
-
-    const normalEndForDay = lastOut >= overtimeTrigger ? normalEnd : (lastOut < normalEnd ? lastOut : normalEnd);
-    const lunchHours = isFriday ? 0 : Math.max(0, standardLunchMinutes / 60);
-    const normalHours = Math.max(0, (normalEndForDay - paidIn) / 36e5 - lunchHours);
-    if (normalHours > 0) {
-      parts.push({ date: new Date(paidIn), hours: normalHours, forcedRule: "normal" });
-    }
-
-    if (lastOut >= overtimeTrigger && normalEnd < lastOut) {
-      parts.push(...splitSegmentByDay(normalEnd, lastOut, "ot1"));
-    }
-  }
-
-  return { parts, missingClockOut, invalidSequence };
+function buildMixocronDailyParts(...args) {
+  return sharedPayrollEngine().buildMixocronDailyParts(...args);
 }
 
-function addHoursByRule(rule, hours, breakdown, allocators) {
-  if (!hours || hours <= 0) return;
-  if (rule === "ot2") {
-    breakdown.ot2Hours += hours;
-    return;
-  }
-  if (rule === "ot1") {
-    breakdown.ot1Hours += hours;
-    return;
-  }
-  if (rule === "normal") {
-    breakdown.normalHours += hours;
-    return;
-  }
-  allocators.threshold(hours);
+function addHoursByRule(...args) {
+  return sharedPayrollEngine().addHoursByRule(...args);
 }
 
-function dailyStandardHours(rules) {
-  const candidates = [
-    rules.daily_normal_hours,
-    rules.public_holiday_standard_hours,
-    DEFAULT_PAYROLL_RULES.daily_normal_hours,
-    8
-  ].map(Number).filter((value) => Number.isFinite(value) && value > 0);
-  return candidates[0] || 8;
+function dailyStandardHours(...args) {
+  return sharedPayrollEngine().dailyStandardHours(...args);
 }
 
-function dailyHourlyRate(dayRate, rules) {
-  const rate = Number(dayRate || 0);
-  if (!Number.isFinite(rate) || rate <= 0) return 0;
-  return rate / dailyStandardHours(rules);
+function dailyHourlyRate(...args) {
+  return sharedPayrollEngine().dailyHourlyRate(...args);
 }
 
-function monthlyHourlyRate(monthlySalary, rules) {
-  const salary = Number(monthlySalary || 0);
-  const hours = Number(rules?.monthly_normal_hours || DEFAULT_PAYROLL_RULES.monthly_normal_hours || 195);
-  if (!Number.isFinite(salary) || salary <= 0 || !Number.isFinite(hours) || hours <= 0) return 0;
-  return salary / hours;
+function monthlyHourlyRate(...args) {
+  return sharedPayrollEngine().monthlyHourlyRate(...args);
 }
 
-function payrollHourlyRateForPayType(payType, rate, rules) {
-  const type = String(payType || "hourly").toLowerCase();
-  if (type === "daily") return dailyHourlyRate(rate, rules);
-  if (type === "monthly") return monthlyHourlyRate(rate, rules);
-  return moneyNumber(rate);
+function payrollHourlyRateForPayType(...args) {
+  return sharedPayrollEngine().payrollHourlyRateForPayType(...args);
 }
 
-function allocateDailyThresholdOnly(hours, date, rules, breakdown, dailyAllocated, normalPaidDates = null) {
-  const key = dateKey(date);
-  const usedToday = dailyAllocated.get(key) || 0;
-  const dayLimit = workWeekForDate(date, rules).normal_hours;
-  const normal = Math.min(hours, Math.max(0, dayLimit - usedToday));
-  const ot1 = Math.max(0, hours - normal);
-  breakdown.normalHours += normal;
-  breakdown.ot1Hours += ot1;
-  if (normal > 0 && normalPaidDates) normalPaidDates.add(key);
-  dailyAllocated.set(key, usedToday + normal);
+function allocateDailyThresholdOnly(...args) {
+  return sharedPayrollEngine().allocateDailyThresholdOnly(...args);
 }
 
-function buildTrElectricalPayrollBreakdown(employee, employeeEvents, rulesInput) {
-  const rules = normalisePayrollRules(rulesInput);
-  const payType = String(employee.pay_type || "hourly").toLowerCase();
-  const isDaily = payType === "daily";
-  const isMonthly = payType === "monthly";
-  const rate = Number(employee.rate || 0);
-  const safeRate = Number.isFinite(rate) ? rate : 0;
-  const effectiveHourlyRate = payrollHourlyRateForPayType(payType, safeRate, rules);
-  const days = new Map();
-  let invalidSequence = 0;
-
-  for (const event of employeeEvents) {
-    const action = String(event.action || "").toUpperCase();
-    const time = payrollEventTime(event, rules);
-    if (!Number.isFinite(time.getTime()) || !["IN", "OUT"].includes(action)) {
-      invalidSequence += 1;
-      continue;
-    }
-    const key = dateKey(time);
-    const row = days.get(key) || { date: new Date(time), events: [] };
-    row.events.push({ action, time });
-    days.set(key, row);
-  }
-
-  let normalDays = 0;
-  let ot1Hours = 0;
-  let missingClockOut = 0;
-
-  for (const row of days.values()) {
-    row.events.sort((a, b) => a.time - b.time);
-    const clockIns = row.events.filter((event) => event.action === "IN");
-    if (!clockIns.length) {
-      invalidSequence += row.events.filter((event) => event.action === "OUT").length;
-      continue;
-    }
-
-    normalDays += 1;
-    const finalEvent = row.events[row.events.length - 1];
-    if (finalEvent.action !== "OUT") {
-      missingClockOut += 1;
-      continue;
-    }
-
-    const overtimeStart = dateAtPayrollMinutes(row.date, 17 * 60);
-    if (finalEvent.time > overtimeStart) {
-      const completedQuarterHours = Math.floor((finalEvent.time - overtimeStart) / (15 * 60 * 1000));
-      ot1Hours += Math.max(0, completedQuarterHours) / 4;
-    }
-  }
-
-  const normalHours = normalDays * 8;
-  const normalPay = isDaily
-    ? normalDays * safeRate
-    : isMonthly
-      ? safeRate
-      : normalHours * safeRate;
-  const ot1Pay = ot1Hours * effectiveHourlyRate * rules.ot1_multiplier;
-  const gross = normalPay + ot1Pay;
-
-  return {
-    normalHours,
-    ot1Hours,
-    ot2Hours: 0,
-    holidayTopupHours: 0,
-    normalDays,
-    dailyHourlyRate: effectiveHourlyRate,
-    normalPay,
-    ot1Pay,
-    ot2Pay: 0,
-    gross,
-    totalHours: normalHours + ot1Hours,
-    sundayHours: 0,
-    publicHolidayWorkedHours: 0,
-    missingClockOut,
-    invalidSequence,
-    exceptionCount: missingClockOut + invalidSequence
-  };
+function buildTrElectricalPayrollBreakdown(...args) {
+  return sharedPayrollEngine().buildTrElectricalPayrollBreakdown(...args);
 }
 
-function buildPayrollBreakdown(employee, employeeEvents, rulesInput = activePayrollRules()) {
-  if (isTrElectricalCompany()) {
-    return buildTrElectricalPayrollBreakdown(employee, employeeEvents, rulesInput);
-  }
-  const rules = normalisePayrollRules(rulesInput);
-  const payType = String(employee.pay_type || "hourly").toLowerCase();
-  const isDaily = payType === "daily";
-  const isMonthly = payType === "monthly";
-  const payCycle = String(employee.pay_cycle || "fortnightly").toLowerCase();
-  const rate = Number(employee.rate || 0);
-  const safeRate = Number.isFinite(rate) ? rate : 0;
-  const effectiveHourlyRate = payrollHourlyRateForPayType(payType, safeRate, rules);
-  const breakdown = {
-    normalHours: 0,
-    ot1Hours: 0,
-    ot2Hours: 0,
-    holidayTopupHours: 0,
-    normalDays: 0,
-    dailyHourlyRate: effectiveHourlyRate,
-    normalPay: 0,
-    ot1Pay: 0,
-    ot2Pay: 0,
-    gross: isMonthly ? safeRate : 0,
-    totalHours: 0,
-    sundayHours: 0,
-    publicHolidayWorkedHours: 0
-  };
-
-  let pendingIn = null;
-  let invalidSequence = 0;
-  const regularParts = [];
-  const publicHolidayWorked = new Map();
-  const dailyAllocated = new Map();
-  const normalPaidDates = new Set();
-  const threshold = normalThresholdHours(payCycle, rules);
-
-  const allocateThreshold = (hours, date = null) => {
-    let normalRoom = Math.max(0, threshold - breakdown.normalHours);
-    if (date && (rules.daily_overtime_enabled || rules.work_week_enabled)) {
-      const key = dateKey(date);
-      const usedToday = dailyAllocated.get(key) || 0;
-      const dayLimit = rules.work_week_enabled ? workWeekForDate(date, rules).normal_hours : rules.daily_normal_hours;
-      normalRoom = Math.min(normalRoom, Math.max(0, dayLimit - usedToday));
-    }
-    const normal = Math.min(hours, normalRoom);
-    const ot1 = Math.max(0, hours - normal);
-    breakdown.normalHours += normal;
-    breakdown.ot1Hours += ot1;
-    if (date) {
-      const key = dateKey(date);
-      if (normal > 0) normalPaidDates.add(key);
-      dailyAllocated.set(key, (dailyAllocated.get(key) || 0) + normal);
-    }
-  };
-
-  const mixocronDaily = rules.payroll_profile === "mixocron"
-    ? buildMixocronDailyParts(employeeEvents, rules)
-    : null;
-  const eventsToProcess = mixocronDaily ? [] : employeeEvents;
-  if (mixocronDaily) {
-    invalidSequence += mixocronDaily.invalidSequence;
-    for (const part of mixocronDaily.parts) {
-      const key = dateKey(part.date);
-      const day = part.date.getDay();
-      const partHours = Math.max(0, part.hours);
-      if (partHours <= 0) continue;
-      breakdown.totalHours += partHours;
-      if (part.forcedRule) {
-        if (part.forcedRule === "normal") normalPaidDates.add(key);
-        addHoursByRule(part.forcedRule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-      } else if (isPublicHoliday(part.date)) {
-        const holidayRule = rules.public_holiday_rule === "ot2_with_topup" ? "ot2" : rules.public_holiday_rule;
-        addHoursByRule(holidayRule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-        breakdown.publicHolidayWorkedHours += partHours;
-        publicHolidayWorked.set(key, (publicHolidayWorked.get(key) || 0) + partHours);
-      } else if (day === 0) {
-        addHoursByRule(rules.sunday_rule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-        breakdown.sundayHours += partHours;
-      } else if (day === 6) {
-        if (rules.saturday_rule === "threshold") regularParts.push({ ...part, hours: partHours });
-        else addHoursByRule(rules.saturday_rule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-      } else {
-        regularParts.push({ ...part, hours: partHours });
-      }
-    }
-  }
-
-  for (const event of eventsToProcess) {
-    const action = String(event.action || "").toUpperCase();
-    const eventTime = payrollEventTime(event, rules);
-    if (!Number.isFinite(eventTime.getTime())) {
-      invalidSequence += 1;
-      continue;
-    }
-
-    if (action === "IN") {
-      if (pendingIn) invalidSequence += 1;
-      pendingIn = event;
-      continue;
-    }
-
-    if (action === "OUT") {
-      if (!pendingIn) {
-        invalidSequence += 1;
-        continue;
-      }
-      const inTime = payrollEventTime(pendingIn, rules);
-      if (eventTime <= inTime) {
-        invalidSequence += 1;
-        pendingIn = null;
-        continue;
-      }
-
-      const shiftParts = buildShiftPartsForPayroll(inTime, eventTime, rules);
-      let lunchDeductionHours = rules.payroll_profile === "mixocron"
-        ? 0
-        : (rules.lunch_deduction_enabled ? Math.max(0, rules.lunch_deduction_minutes / 60) : 0);
-      for (const part of shiftParts) {
-        const key = dateKey(part.date);
-        const day = part.date.getDay();
-        let partHours = part.hours;
-        if (lunchDeductionHours > 0) {
-          const deducted = Math.min(partHours, lunchDeductionHours);
-          partHours = Math.max(0, partHours - deducted);
-          lunchDeductionHours -= deducted;
-        }
-        if (partHours <= 0) continue;
-        breakdown.totalHours += partHours;
-        if (part.forcedRule) {
-          if (part.forcedRule === "normal") normalPaidDates.add(key);
-          addHoursByRule(part.forcedRule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-        } else if (isPublicHoliday(part.date)) {
-          const holidayRule = rules.public_holiday_rule === "ot2_with_topup" ? "ot2" : rules.public_holiday_rule;
-          addHoursByRule(holidayRule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-          breakdown.publicHolidayWorkedHours += partHours;
-          publicHolidayWorked.set(key, (publicHolidayWorked.get(key) || 0) + partHours);
-        } else if (rules.overtime_method === "cycle_only") {
-          const dayRule = workWeekForDate(part.date, rules).rule;
-          if (dayRule === "ot1" || dayRule === "ot2") {
-            addHoursByRule(dayRule, partHours, breakdown, { threshold: (hours) => regularParts.push({ ...part, hours }) });
-            if (day === 0 && dayRule === "ot2") breakdown.sundayHours += partHours;
-          } else {
-            regularParts.push({ ...part, hours: partHours });
-          }
-        } else if (rules.overtime_method === "day_rules") {
-          const dayRule = workWeekForDate(part.date, rules).rule;
-          if (dayRule === "normal") normalPaidDates.add(key);
-          addHoursByRule(dayRule, partHours, breakdown, { threshold: (hours) => allocateDailyThresholdOnly(hours, part.date, rules, breakdown, dailyAllocated, normalPaidDates) });
-          if (day === 0 && dayRule === "ot2") breakdown.sundayHours += partHours;
-        } else if (rules.work_week_enabled || rules.overtime_method === "daily_cycle") {
-          const dayRule = workWeekForDate(part.date, rules).rule;
-          addHoursByRule(dayRule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-          if (day === 0 && dayRule === "ot2") breakdown.sundayHours += partHours;
-        } else if (day === 0) {
-          addHoursByRule(rules.sunday_rule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-          breakdown.sundayHours += partHours;
-        } else if (day === 6) {
-          if (rules.saturday_rule === "threshold") regularParts.push({ ...part, hours: partHours });
-          else addHoursByRule(rules.saturday_rule, partHours, breakdown, { threshold: (hours) => allocateThreshold(hours, part.date) });
-        } else {
-          regularParts.push({ ...part, hours: partHours });
-        }
-      }
-      pendingIn = null;
-    }
-  }
-
-  const missingClockOut = (pendingIn ? 1 : 0) + (mixocronDaily?.missingClockOut || 0);
-
-  if (!isMonthly && rules.public_holiday_rule === "ot2_with_topup") {
-    for (const holiday of datesInRange(el.payrollStartDate.value, el.payrollEndDate.value)) {
-      if (!isPublicHoliday(holiday)) continue;
-      if (!shouldApplyPublicHolidayTopup(holiday)) continue;
-      const worked = publicHolidayWorked.get(dateKey(holiday)) || 0;
-      const topup = Math.max(0, rules.public_holiday_standard_hours - worked);
-      breakdown.holidayTopupHours += topup;
-      breakdown.normalHours += topup;
-      breakdown.totalHours += topup;
-      if (topup > 0) normalPaidDates.add(dateKey(holiday));
-    }
-  }
-
-  for (const part of regularParts) {
-    allocateThreshold(part.hours, part.date);
-  }
-
-  breakdown.normalDays = isDaily ? normalPaidDates.size : 0;
-  breakdown.normalPay = isDaily
-    ? breakdown.normalDays * safeRate
-    : isMonthly
-      ? safeRate
-      : breakdown.normalHours * safeRate;
-  breakdown.ot1Pay = breakdown.ot1Hours * effectiveHourlyRate * rules.ot1_multiplier;
-  breakdown.ot2Pay = breakdown.ot2Hours * effectiveHourlyRate * rules.ot2_multiplier;
-  breakdown.gross = isMonthly
-    ? safeRate + breakdown.ot1Pay + breakdown.ot2Pay
-    : breakdown.normalPay + breakdown.ot1Pay + breakdown.ot2Pay;
-
-  return {
-    ...breakdown,
-    missingClockOut,
-    invalidSequence,
-    exceptionCount: missingClockOut + invalidSequence
-  };
+function buildPayrollBreakdown(...args) {
+  return sharedPayrollEngine().buildPayrollBreakdown(...args);
 }
 
-function calculatePayroll(events, employees, rulesInput = activePayrollRules()) {
-  const rules = normalisePayrollRules(rulesInput);
-  const employeeMap = new Map((employees || []).map((employee) => [String(employee.employee_id), employee]));
-  const eventGroups = new Map();
-
-  for (const event of events || []) {
-    const employeeId = String(event.employee_id || "");
-    if (!employeeId) continue;
-    if (!eventGroups.has(employeeId)) eventGroups.set(employeeId, []);
-    eventGroups.get(employeeId).push(event);
-  }
-
-  const employeeIds = new Set([
-    ...(employees || []).map((employee) => String(employee.employee_id || "")),
-    ...eventGroups.keys()
-  ]);
-
-  const rows = [];
-  for (const employeeId of employeeIds) {
-    if (!employeeId) continue;
-    const employee = employeeMap.get(employeeId) || {};
-    if (employee.active === false) continue;
-
-    const employeeEvents = (eventGroups.get(employeeId) || [])
-      .filter((event) => String(event.result || "").toUpperCase() === "OK")
-      .filter((event) => ["IN", "OUT"].includes(String(event.action || "").toUpperCase()))
-      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-    const rate = Number(employee.rate || 0);
-    const safeRate = Number.isFinite(rate) ? rate : 0;
-    const payType = String(employee.pay_type || "hourly").toLowerCase();
-    const payCycle = String(employee.pay_cycle || "fortnightly").toLowerCase();
-    const breakdown = buildPayrollBreakdown(
-      { ...employee, rate: safeRate, pay_type: payType, pay_cycle: payCycle },
-      employeeEvents,
-      rules
-    );
-    rows.push({
-      employee_id: employeeId,
-      employee_name: employee.full_name || employeeEvents[0]?.employee_name || "",
-      id_number: employee.id_number || "",
-      employment_date: employee.employment_date || "",
-      pay_type: payType,
-      pay_cycle: payCycle,
-      nbcei_designation_code: normaliseNbceiDesignationCode(employee.nbcei_designation_code),
-      sbf_member: employee.sbf_member === true,
-      saewa_member: employee.saewa_member === true,
-      rate: safeRate,
-      hours: breakdown.totalHours,
-      gross: breakdown.gross,
-      breakdown,
-      missingClockOut: breakdown.missingClockOut,
-      invalidSequence: breakdown.invalidSequence,
-      exceptionCount: breakdown.exceptionCount
-    });
-  }
-
-  return rows.sort((a, b) => String(a.employee_id).localeCompare(String(b.employee_id), undefined, { numeric: true }));
+function calculatePayroll(...args) {
+  return sharedPayrollEngine().calculatePayroll(...args);
 }
 
 function renderPayrollRows(rows) {
@@ -2921,11 +2335,8 @@ function deductionTypeForField(field) {
   return companyDeductionTypes.find((type) => labels.includes(String(type.name || "").toLowerCase()));
 }
 
-function deductionAmountForField(deductions, field) {
-  const labels = [field.label, ...(field.aliases || [])].map((label) => label.toLowerCase());
-  return (deductions || [])
-    .filter((item) => item.active && labels.includes(String(item.description || "").toLowerCase()))
-    .reduce((sum, item) => sum + moneyNumber(item.amount), 0);
+function deductionAmountForField(...args) {
+  return sharedPayrollEngine().deductionAmountForField(...args);
 }
 
 function visibleCustomDeductionTypes() {
@@ -2934,14 +2345,12 @@ function visibleCustomDeductionTypes() {
   )));
 }
 
-function isTrElectricalCompany(company = currentCompany()) {
-  return String(company?.id || "") === TR_ELECTRICAL_COMPANY_ID;
+function isTrElectricalCompany(...args) {
+  return sharedPayrollEngine().isTrElectricalCompany(...args);
 }
 
-function normaliseNbceiDesignationCode(value) {
-  const code = String(value || "").trim().toLowerCase();
-  if (code === "none") return "none";
-  return TR_ELECTRICAL_NBCEI_RATES[code] ? code : "";
+function normaliseNbceiDesignationCode(...args) {
+  return sharedPayrollEngine().normaliseNbceiDesignationCode(...args);
 }
 
 function nbceiDesignationLabel(value) {
@@ -2978,59 +2387,8 @@ function missingTrElectricalLevyDesignations(employees = companyAdminEmployees) 
   ));
 }
 
-function trElectricalAutomaticLevyDeductions(rows, savedDeductions, levyPeriod, company = currentCompany()) {
-  if (!isTrElectricalCompany(company) || !levyPeriod) return savedDeductions || [];
-  const weeks = Number(levyPeriod.levy_weeks);
-  const rateSet = TR_ELECTRICAL_NBCEI_RATE_SETS[String(levyPeriod.rate_version || "")];
-  if (![4, 5].includes(weeks) || !rateSet) return savedDeductions || [];
-
-  const deductions = [...(savedDeductions || [])];
-  const levyFields = [
-    { name: "SBF", rateKey: "sbf", membershipKey: "sbf_member" },
-    { name: "SAEWA", rateKey: "saewa", weeklyRate: TR_ELECTRICAL_SAEWA_WEEKLY_RATE, membershipKey: "saewa_member" },
-    { name: "Council Levy", rateKey: "council" },
-    { name: "CBL", rateKey: "cbl" },
-    { name: "Provident", rateKey: "provident" }
-  ];
-
-  for (const row of rows || []) {
-    const designationCode = normaliseNbceiDesignationCode(
-      levyPeriod.employee_designations?.[String(row.employee_id || "")]
-      ?? row.nbcei_designation_code
-    );
-    if (!designationCode || designationCode === "none") continue;
-    const rates = rateSet[designationCode];
-    if (!rates) continue;
-
-    for (const field of levyFields) {
-      const periodMembership = levyPeriod.employee_levy_memberships?.[String(row.employee_id || "")];
-      const isMember = periodMembership?.[field.membershipKey] ?? row[field.membershipKey];
-      if (field.membershipKey && isMember !== true) continue;
-      const alreadySaved = deductions.some((deduction) => (
-        deduction.active !== false
-        && String(deduction.employee_id || "") === String(row.employee_id || "")
-        && String(deduction.description || "").trim().toLowerCase() === field.name.toLowerCase()
-      ));
-      if (alreadySaved) continue;
-      const type = companyDeductionTypes.find((item) => (
-        item.active && String(item.name || "").trim().toLowerCase() === field.name.toLowerCase()
-      ));
-      deductions.push({
-        id: `auto-${row.employee_id}-${field.rateKey}-${levyPeriod.period_start}-${levyPeriod.period_end}`,
-        company_id: company.id,
-        employee_id: row.employee_id,
-        employee_name: row.employee_name || "",
-        deduction_type_id: type?.id || "",
-        description: field.name,
-        amount: Math.round(moneyNumber(field.weeklyRate ?? rates[field.rateKey]) * weeks * 100) / 100,
-        period_start: levyPeriod.period_start || "",
-        period_end: levyPeriod.period_end || "",
-        active: true,
-        automatic_levy: true
-      });
-    }
-  }
-  return deductions;
+function trElectricalAutomaticLevyDeductions(...args) {
+  return sharedPayrollEngine().trElectricalAutomaticLevyDeductions(...args);
 }
 
 function visibleStandardDeductionFields() {
@@ -3073,11 +2431,8 @@ function adjustmentPayForField(adjustments, field) {
     .reduce((sum, item) => sum + moneyNumber(item.amount), 0);
 }
 
-function isStandardAdjustment(adjustment) {
-  return STANDARD_ADJUSTMENT_FIELDS.some((field) => (
-    String(adjustment.adjustment_type || "") === field.key
-    || field.label.toLowerCase() === String(adjustment.description || "").toLowerCase()
-  ));
+function isStandardAdjustment(...args) {
+  return sharedPayrollEngine().isStandardAdjustment(...args);
 }
 
 function renderDeductionEditor(row) {
@@ -3146,6 +2501,7 @@ function setDeductionEditorOpen(open) {
 }
 
 function openPayrollDeductions(employeeId) {
+  if (currentPayrollSummaryRun()?.finalisedId) return alert("This payroll is finalised. Its saved figures cannot be edited here.");
   const row = payrollRows.find((item) => String(item.employee_id) === String(employeeId));
   if (!row) return;
   currentDeductionEmployeeId = String(employeeId || "");
@@ -3205,6 +2561,7 @@ function toggleDeductionEditor() {
 }
 
 async function savePayrollDeductions() {
+  if (currentPayrollSummaryRun()?.finalisedId) return alert("This payroll is finalised. Its saved figures cannot be edited here.");
   const company = currentCompany();
   const row = selectedDeductionRow();
   const { start, end } = payrollPeriodRange();
@@ -3366,13 +2723,9 @@ function updatePayslipSelection() {
   if (el.payslipModalSub) {
     el.payslipModalSub.textContent = summary
       ? "Generate a summary of all employees in the current payroll run."
-      : usesPayrollYtd(company, el.payrollEndDate?.value)
-      ? "Generating saves this period's totals so PAYE carries forward correctly."
-      : "Choose an employee from the current payroll run.";
+      : "Choose an employee from the current payroll run. Generating does not finalise payroll.";
   }
-  el.btnGeneratePayslip.textContent = summary ? "Generate Summary" : usesPayrollYtd(company, el.payrollEndDate?.value)
-    ? "Finalise & Generate Payslip"
-    : "Generate Payslip";
+  el.btnGeneratePayslip.textContent = summary ? "Generate Summary" : "Generate Payslip";
 }
 
 function closePayslipModal() {
@@ -3395,9 +2748,8 @@ function payslipAmount(value) {
   return Number.isFinite(number) && Math.abs(number) > 0.004 ? number.toFixed(2) : "-";
 }
 
-function moneyNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+function moneyNumber(...args) {
+  return sharedPayrollEngine().moneyNumber(...args);
 }
 
 function payrollPeriodRange() {
@@ -3407,20 +2759,8 @@ function payrollPeriodRange() {
   };
 }
 
-function normaliseDeduction(row = {}) {
-  return {
-    id: row.id || row.deduction_id || "",
-    company_id: row.company_id || "",
-    employee_id: row.employee_id || "",
-    employee_name: row.employee_name || "",
-    deduction_type_id: row.deduction_type_id || "",
-    description: row.description || "",
-    amount: moneyNumber(row.amount),
-    period_start: row.period_start || "",
-    period_end: row.period_end || "",
-    active: row.active !== false,
-    automatic_levy: row.automatic_levy === true
-  };
+function normaliseDeduction(...args) {
+  return sharedPayrollEngine().normaliseDeduction(...args);
 }
 
 function normaliseDeductionType(row = {}) {
@@ -3434,222 +2774,32 @@ function normaliseDeductionType(row = {}) {
   };
 }
 
-function periodCountForPayCycle(payCycle) {
-  const cycle = String(payCycle || "fortnightly").toLowerCase();
-  if (cycle === "weekly") return 52;
-  if (cycle === "monthly") return 12;
-  return 26;
+function periodCountForPayCycle(...args) {
+  return sharedPayrollEngine().periodCountForPayCycle(...args);
 }
 
-function calculateAnnualTax2027(annualIncome) {
-  const taxable = Math.max(0, moneyNumber(annualIncome));
-  const bracket = SA_PAYE_2027.brackets.find((item) => taxable <= item.upTo) || SA_PAYE_2027.brackets[SA_PAYE_2027.brackets.length - 1];
-  const taxBeforeRebate = bracket.base + Math.max(0, taxable - bracket.over) * bracket.rate;
-  return Math.max(0, taxBeforeRebate - SA_PAYE_2027.primaryRebate);
+function calculateAnnualTax2027(...args) {
+  return sharedPayrollEngine().calculateAnnualTax2027(...args);
 }
 
-function calculateCumulativePaye(gross, providentContribution, periodCount, ytdContext) {
-  const completedPeriods = Number(ytdContext?.completedPeriods || 0)
-    + Number(ytdContext?.finalizedPeriods || 0);
-  const periodsElapsed = Math.min(periodCount, Math.max(1, completedPeriods + 1));
-  const previousGross = Math.max(0, moneyNumber(ytdContext?.previousGross));
-  const previousRetirement = Math.max(0, moneyNumber(ytdContext?.previousRetirement));
-  const previousPaye = Math.max(0, moneyNumber(ytdContext?.previousPaye));
-  const cumulativeGross = previousGross + Math.max(0, moneyNumber(gross));
-  const cumulativeRetirement = previousRetirement + Math.max(0, moneyNumber(providentContribution));
-  const qualifyingRetirement = Math.min(
-    cumulativeRetirement,
-    cumulativeGross * 0.275,
-    SA_RETIREMENT_FUND_ANNUAL_LIMIT * periodsElapsed / periodCount
-  );
-  const cumulativePayeRemuneration = Math.max(0, cumulativeGross - qualifyingRetirement);
-  const annualEquivalent = cumulativePayeRemuneration * periodCount / periodsElapsed;
-  const cumulativePayeLiability = calculateAnnualTax2027(annualEquivalent) * periodsElapsed / periodCount;
-  const amount = Math.round(Math.max(0, cumulativePayeLiability - previousPaye) * 100) / 100;
-
-  return {
-    amount,
-    tax_year_start: ytdContext?.taxYearStart || "",
-    periods_elapsed: periodsElapsed,
-    gross_remuneration: Math.round(cumulativeGross * 100) / 100,
-    retirement_fund_contributions: Math.round(cumulativeRetirement * 100) / 100,
-    paye_deducted: Math.round((previousPaye + amount) * 100) / 100
-  };
+function calculateCumulativePaye(...args) {
+  return sharedPayrollEngine().calculateCumulativePaye(...args);
 }
 
-function statutoryDeductionRows(row, rulesInput = activePayrollRules(), existingDeductions = [], ytdContext = null) {
-  const rules = normalisePayrollRules(rulesInput);
-  const gross = moneyNumber(row.gross);
-  if (gross <= 0 && !ytdContext?.enabled) return [];
-  const periodCount = periodCountForPayCycle(row.pay_cycle);
-  const deductions = [];
-
-  if (rules.calculate_uif && gross > 0) {
-    const periodCeiling = SA_UIF_MONTHLY_CEILING * 12 / periodCount;
-    const amount = Math.min(gross, periodCeiling) * SA_UIF_RATE;
-    if (amount > 0) {
-      deductions.push({
-        employee_id: row.employee_id,
-        employee_name: row.employee_name || "",
-        description: "UIF",
-        amount,
-        active: true,
-        statutory: true
-      });
-    }
-  }
-
-  if (rules.calculate_paye) {
-    const providentContribution = isTrElectricalCompany()
-      ? Math.max(0, deductionAmountForField(existingDeductions, { label: "Provident" }))
-      : 0;
-    const ytdPaye = ytdContext?.enabled
-      ? calculateCumulativePaye(gross, providentContribution, periodCount, ytdContext)
-      : null;
-    const amount = ytdPaye
-      ? ytdPaye.amount
-      : (() => {
-          const qualifyingProvident = Math.min(
-            providentContribution,
-            gross * 0.275,
-            SA_RETIREMENT_FUND_ANNUAL_LIMIT / periodCount
-          );
-          const payeRemuneration = Math.max(0, gross - qualifyingProvident);
-          const annualTax = calculateAnnualTax2027(payeRemuneration * periodCount);
-          return annualTax / periodCount;
-        })();
-    if (amount > 0 || ytdPaye) {
-      deductions.push({
-        employee_id: row.employee_id,
-        employee_name: row.employee_name || "",
-        description: "Tax",
-        amount,
-        active: true,
-        statutory: true,
-        ytd: ytdPaye
-      });
-    }
-  }
-
-  return deductions;
+function statutoryDeductionRows(...args) {
+  return sharedPayrollEngine().statutoryDeductionRows(...args);
 }
 
-function normaliseAdjustment(row = {}) {
-  return {
-    id: row.id || row.adjustment_id || "",
-    company_id: row.company_id || "",
-    employee_id: row.employee_id || "",
-    employee_name: row.employee_name || "",
-    adjustment_type: row.adjustment_type || "",
-    description: row.description || "",
-    hours: moneyNumber(row.hours),
-    amount: moneyNumber(row.amount),
-    period_start: row.period_start || "",
-    period_end: row.period_end || "",
-    active: row.active !== false
-  };
+function normaliseAdjustment(...args) {
+  return sharedPayrollEngine().normaliseAdjustment(...args);
 }
 
-function attachDeductionsToPayrollRows(rows, deductions, rulesInput = activePayrollRules(), ytdContext = null) {
-  const rules = normalisePayrollRules(rulesInput);
-  const autoKeys = new Set([
-    rules.calculate_paye ? "tax" : "",
-    rules.calculate_uif ? "uif" : ""
-  ].filter(Boolean));
-  const byEmployee = new Map();
-  for (const deduction of (deductions || []).map(normaliseDeduction).filter((item) => item.active)) {
-    const standardField = STANDARD_DEDUCTION_FIELDS.find((field) => deductionAmountForField([deduction], field) > 0);
-    if (standardField && autoKeys.has(standardField.key)) continue;
-    const key = String(deduction.employee_id || "");
-    if (!byEmployee.has(key)) byEmployee.set(key, []);
-    byEmployee.get(key).push(deduction);
-  }
-  return (rows || []).map((row) => {
-    const existingDeductions = byEmployee.get(String(row.employee_id || "")) || [];
-    const employeeYtdContext = payrollEmployeeYtdContext(ytdContext, row.employee_id);
-    const rowDeductions = [
-      ...existingDeductions,
-      ...statutoryDeductionRows(row, rules, existingDeductions, employeeYtdContext)
-    ];
-    const totalDeductions = rowDeductions.reduce((sum, item) => sum + moneyNumber(item.amount), 0);
-    const gross = moneyNumber(row.gross);
-    const taxYtd = rowDeductions.find((item) => item.ytd)?.ytd || null;
-    return {
-      ...row,
-      deductions: rowDeductions,
-      totalDeductions,
-      net: Math.max(0, gross - totalDeductions),
-      ytd: taxYtd
-    };
-  });
+function attachDeductionsToPayrollRows(...args) {
+  return sharedPayrollEngine().attachDeductionsToPayrollRows(...args);
 }
 
-function attachAdjustmentsToPayrollRows(rows, adjustments, rulesInput = activePayrollRules()) {
-  const rules = normalisePayrollRules(rulesInput);
-  const byEmployee = new Map();
-  for (const adjustment of (adjustments || []).map(normaliseAdjustment).filter((item) => item.active && isStandardAdjustment(item))) {
-    const key = String(adjustment.employee_id || "");
-    if (!byEmployee.has(key)) byEmployee.set(key, []);
-    byEmployee.get(key).push(adjustment);
-  }
-
-  return (rows || []).map((row) => {
-    const rowAdjustments = byEmployee.get(String(row.employee_id || "")) || [];
-    const breakdown = { ...(row.breakdown || {}) };
-    const rate = payrollHourlyRateForPayType(row.pay_type, row.rate, rules);
-    let totalAdjustments = 0;
-    let totalAdjustmentHours = 0;
-
-    for (const adjustment of rowAdjustments) {
-      const type = String(adjustment.adjustment_type || "");
-      const hours = moneyNumber(adjustment.hours);
-      const amount = moneyNumber(adjustment.amount);
-      totalAdjustments += amount;
-      if (!["allowance", "bonus"].includes(type)) totalAdjustmentHours += hours;
-
-      if (type === "paid_leave") {
-        breakdown.paidLeaveHours = moneyNumber(breakdown.paidLeaveHours) + hours;
-        breakdown.paidLeavePay = moneyNumber(breakdown.paidLeavePay) + amount;
-        breakdown.normalHours = moneyNumber(breakdown.normalHours) + hours;
-        breakdown.normalPay = moneyNumber(breakdown.normalPay) + amount;
-      } else if (type === "manual_normal_hours") {
-        breakdown.manualNormalHours = moneyNumber(breakdown.manualNormalHours) + hours;
-        breakdown.manualNormalPay = moneyNumber(breakdown.manualNormalPay) + amount;
-        breakdown.normalHours = moneyNumber(breakdown.normalHours) + hours;
-        breakdown.normalPay = moneyNumber(breakdown.normalPay) + amount;
-      } else if (type === "manual_ot1") {
-        const safeAmount = amount || hours * rate * rules.ot1_multiplier;
-        breakdown.manualOt1Hours = moneyNumber(breakdown.manualOt1Hours) + hours;
-        breakdown.manualOt1Pay = moneyNumber(breakdown.manualOt1Pay) + safeAmount;
-        breakdown.ot1Hours = moneyNumber(breakdown.ot1Hours) + hours;
-        breakdown.ot1Pay = moneyNumber(breakdown.ot1Pay) + safeAmount;
-      } else if (type === "manual_ot2") {
-        const safeAmount = amount || hours * rate * rules.ot2_multiplier;
-        breakdown.manualOt2Hours = moneyNumber(breakdown.manualOt2Hours) + hours;
-        breakdown.manualOt2Pay = moneyNumber(breakdown.manualOt2Pay) + safeAmount;
-        breakdown.ot2Hours = moneyNumber(breakdown.ot2Hours) + hours;
-        breakdown.ot2Pay = moneyNumber(breakdown.ot2Pay) + safeAmount;
-      } else if (type === "bonus") {
-        breakdown.bonusPay = moneyNumber(breakdown.bonusPay) + amount;
-      } else if (type === "allowance") {
-        breakdown.allowancePay = moneyNumber(breakdown.allowancePay) + amount;
-      }
-    }
-
-    const hours = moneyNumber(row.hours) + totalAdjustmentHours;
-    const gross = moneyNumber(row.gross) + totalAdjustments;
-    breakdown.totalHours = moneyNumber(breakdown.totalHours) + totalAdjustmentHours;
-    breakdown.gross = moneyNumber(breakdown.gross) + totalAdjustments;
-
-    return {
-      ...row,
-      adjustments: rowAdjustments,
-      totalAdjustments,
-      hours,
-      gross,
-      breakdown
-    };
-  });
+function attachAdjustmentsToPayrollRows(...args) {
+  return sharedPayrollEngine().attachAdjustmentsToPayrollRows(...args);
 }
 
 async function fetchCompanyDeductionTypes(company) {
@@ -3686,50 +2836,14 @@ async function fetchPayrollLevyPeriod(company, start, end) {
   return data || null;
 }
 
-async function savePayrollLevyPeriod(company, start, end, weeks) {
-  const levyWeeks = Number(weeks);
-  if (!isTrElectricalCompany(company) || ![4, 5].includes(levyWeeks)) return null;
-  const payload = {
-    company_id: company.id,
-    period_start: start,
-    period_end: end,
-    levy_scheme: "nbcei",
-    levy_weeks: levyWeeks,
-    rate_version: TR_ELECTRICAL_NBCEI_RATE_VERSION,
-    employee_designations: Object.fromEntries(
-      companyAdminEmployees
-        .filter((employee) => employee.active !== false)
-        .map((employee) => [
-          String(employee.employee_id || ""),
-          normaliseNbceiDesignationCode(employee.nbcei_designation_code)
-        ])
-        .filter(([employeeId, designation]) => employeeId && designation)
-    ),
-    employee_levy_memberships: Object.fromEntries(
-      companyAdminEmployees
-        .filter((employee) => employee.active !== false)
-        .map((employee) => [
-          String(employee.employee_id || ""),
-          {
-            sbf_member: employee.sbf_member === true,
-            saewa_member: employee.saewa_member === true
-          }
-        ])
-        .filter(([employeeId]) => employeeId)
-    ),
-    created_by: currentUser?.id || null,
-    updated_at: new Date().toISOString()
-  };
-  const { data, error } = await sb
-    .from(COMPANY_PAYROLL_LEVY_PERIODS_TABLE)
-    .upsert(payload, { onConflict: "company_id,period_start,period_end,levy_scheme" })
-    .select("id,company_id,period_start,period_end,levy_scheme,levy_weeks,rate_version,employee_designations,employee_levy_memberships")
-    .single();
-  if (error) throw error;
-  return data;
+function previewPayrollLevyPeriod(...args) {
+  return sharedPayrollEngine().previewPayrollLevyPeriod(...args);
 }
 
 function payrollTaxYearStart(value) {
+  if (window.ShiftlyPayrollHistory) {
+    try { return window.ShiftlyPayrollHistory.taxYear(value); } catch (_) { return ""; }
+  }
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return "";
   const year = Number(match[1]);
@@ -3738,16 +2852,18 @@ function payrollTaxYearStart(value) {
   return `${month >= 3 ? year : year - 1}-03-01`;
 }
 
-function payrollYtdTakeoverDate(company = currentCompany()) {
-  return PAYROLL_YTD_TAKEOVER_DATES[String(company?.id || "")] || "";
+function payrollYtdTakeoverDate(...args) {
+  return sharedPayrollEngine().payrollYtdTakeoverDate(...args);
 }
 
-function usesPayrollYtd(company, periodEnd) {
-  const takeoverDate = payrollYtdTakeoverDate(company);
-  return Boolean(takeoverDate && String(periodEnd || "") >= takeoverDate);
+function usesPayrollYtd(...args) {
+  return sharedPayrollEngine().usesPayrollYtd(...args);
 }
 
 async function fetchPayrollYtdContext(company, periodStart, periodEnd, employeeId = "") {
+  if (typeof payrollHistoryEnabled === "function" && payrollHistoryEnabled()) {
+    return payrollHistoryContext(company, periodStart, periodEnd, employeeId);
+  }
   const takeoverDate = payrollYtdTakeoverDate(company);
   const enabled = usesPayrollYtd(company, periodEnd);
   const taxYearStart = payrollTaxYearStart(periodEnd);
@@ -3824,58 +2940,16 @@ async function fetchPayrollYtdContext(company, periodStart, periodEnd, employeeI
   };
 }
 
-function payrollEmployeeYtdContext(ytdContext, employeeId) {
-  if (!ytdContext?.enabled) return null;
-  return ytdContext.byEmployee.get(String(employeeId || "")) || {
-    enabled: true,
-    hasOpening: false,
-    taxYearStart: ytdContext.taxYearStart,
-    asOfDate: "",
-    completedPeriods: 0,
-    previousGross: 0,
-    previousRetirement: 0,
-    previousPaye: 0,
-    finalizedPeriods: 0
-  };
+function payrollEmployeeYtdContext(...args) {
+  return sharedPayrollEngine().payrollEmployeeYtdContext(...args);
 }
 
-function expectedMonthlyPeriodsBefore(periodStart, taxYearStart) {
-  const period = new Date(`${periodStart}T00:00:00`);
-  const taxStart = new Date(`${taxYearStart}T00:00:00`);
-  if (!Number.isFinite(period.getTime()) || !Number.isFinite(taxStart.getTime())) return 0;
-  return Math.max(0, (period.getFullYear() - taxStart.getFullYear()) * 12 + period.getMonth() - taxStart.getMonth());
+function expectedMonthlyPeriodsBefore(...args) {
+  return sharedPayrollEngine().expectedMonthlyPeriodsBefore(...args);
 }
 
-function validatePayrollYtdContinuity(rows, ytdContext, periodEnd) {
-  if (!ytdContext?.enabled) return;
-  const problems = [];
-  const isTakeoverTaxYear = ytdContext.taxYearStart === "2026-03-01";
-  for (const row of rows || []) {
-    if (moneyNumber(row.rate) <= 0 && moneyNumber(row.gross) <= 0) continue;
-    const context = payrollEmployeeYtdContext(ytdContext, row.employee_id);
-    const employedBeforeTakeover = !row.employment_date
-      || String(row.employment_date) < ytdContext.takeoverDate;
-    if (isTakeoverTaxYear && employedBeforeTakeover && !context.hasOpening) {
-      problems.push(`${row.employee_id} - ${row.employee_name || "Employee"}: July YTD opening balance missing`);
-      continue;
-    }
-    if (String(row.pay_cycle || "").toLowerCase() !== "monthly" || !context.hasOpening) continue;
-    const expectedCompleted = expectedMonthlyPeriodsBefore(periodEnd, ytdContext.taxYearStart);
-    const actualCompleted = context.completedPeriods + context.finalizedPeriods;
-    if (actualCompleted !== expectedCompleted) {
-      problems.push(
-        `${row.employee_id} - ${row.employee_name || "Employee"}: `
-        + `expected ${expectedCompleted} completed period${expectedCompleted === 1 ? "" : "s"}, found ${actualCompleted}`
-      );
-    }
-  }
-  if (problems.length) {
-    throw new Error(
-      `${ytdContext.companyName || "Company"} YTD history is incomplete:\n\n${problems.slice(0, 8).join("\n")}`
-      + `${problems.length > 8 ? `\n+ ${problems.length - 8} more` : ""}`
-      + "\n\nFinalize the missing earlier payroll period before continuing."
-    );
-  }
+function validatePayrollYtdContinuity(...args) {
+  return sharedPayrollEngine().validatePayrollYtdContinuity(...args);
 }
 
 async function fetchPayrollDeductions(company, start, end, employeeId = "") {
@@ -3953,46 +3027,6 @@ function payslipDeductionLine(description, amount = 0) {
   </tr>`;
 }
 
-async function savePayrollPeriodTotals(company, rows, start, end) {
-  if (
-    !usesPayrollYtd(company, end)
-    || !rows?.length
-  ) {
-    return;
-  }
-
-  const records = rows.map((row) => {
-    if (!row.ytd?.tax_year_start || !row.ytd?.periods_elapsed) {
-      throw new Error(`YTD calculation is missing for ${row.employee_id} - ${row.employee_name || "Employee"}.`);
-    }
-    return {
-      company_id: company.id,
-      employee_id: row.employee_id,
-      tax_year_start: row.ytd.tax_year_start,
-      period_start: start,
-      period_end: end,
-      period_number: row.ytd.periods_elapsed,
-      gross_remuneration: Math.round(Math.max(0, moneyNumber(row.gross)) * 100) / 100,
-      retirement_fund_contributions: Math.round(Math.max(
-        0,
-        deductionAmountForField(row.deductions || [], { label: "Provident" })
-      ) * 100) / 100,
-      paye_deducted: Math.round(Math.max(
-        0,
-        deductionAmountForField(row.deductions || [], { label: "Tax" })
-      ) * 100) / 100,
-      finalized_by: currentUser?.id || null,
-      finalized_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-  });
-
-  const { error } = await sb
-    .from(EMPLOYEE_PAYROLL_PERIOD_TOTALS_TABLE)
-    .upsert(records, { onConflict: "company_id,employee_id,period_start,period_end" });
-  if (error) throw error;
-}
-
 function buildPayrollSummaryModel(company, rows, period) {
   const cents = value => {
     const number = Number(value);
@@ -4036,9 +3070,10 @@ function generatePayrollSummary() {
   const label = button.textContent;
   button.textContent = "Preparing summary...";
   try {
-    const model = buildPayrollSummaryModel(currentCompany(), run.rows, run);
+    const company = run.companySnapshot || currentCompany();
+    const model = buildPayrollSummaryModel(company, run.rows, run);
     win.document.open();
-    win.document.write(buildPayslipDocument(currentCompany(), [], { start: run.start, end: run.end, summary: model }));
+    win.document.write(buildPayslipDocument(company, [], { start: run.start, end: run.end, summary: model }));
     win.document.close();
     closePayslipModal();
   } catch (error) {
@@ -4054,7 +3089,9 @@ function generatePayrollSummary() {
 async function generateSelectedPayslip() {
   const employeeId = el.payslipEmployeeSelect.value;
   if (employeeId === "__summary__") return generatePayrollSummary();
-  const company = currentCompany();
+  const run = currentPayrollSummaryRun();
+  if (!run) return alert("Run payroll for the selected company and dates before generating payslips.");
+  const company = run.companySnapshot || currentCompany();
   const rows = employeeId === "__all__"
     ? payrollRows
     : payrollRows.filter((item) => String(item.employee_id) === String(employeeId));
@@ -4066,22 +3103,16 @@ async function generateSelectedPayslip() {
   const originalLabel = el.btnGeneratePayslip.textContent;
   el.btnGeneratePayslip.textContent = "Preparing...";
   try {
-    await savePayrollPeriodTotals(
-      company,
-      rows,
-      el.payrollStartDate.value,
-      el.payrollEndDate.value
-    );
     win.document.open();
     win.document.write(buildPayslipDocument(company, rows, {
-      start: el.payrollStartDate.value,
-      end: el.payrollEndDate.value
+      start: run.start,
+      end: run.end
     }));
     win.document.close();
     closePayslipModal();
   } catch (error) {
     win.close();
-    alert(`Failed to finalise payroll: ${error.message || error}`);
+    alert(`Failed to generate payslip: ${error.message || error}`);
   } finally {
     el.btnGeneratePayslip.disabled = false;
     el.btnGeneratePayslip.textContent = originalLabel;
@@ -4090,7 +3121,7 @@ async function generateSelectedPayslip() {
 
 function buildPayslipPage(company, row, period) {
   const b = row.breakdown || {};
-  const rules = activePayrollRules();
+  const rules = row._payrollRules || activePayrollRules();
   const rate = Number(row.rate || 0);
   const isMonthly = row.pay_type === "monthly";
   const isDaily = row.pay_type === "daily";
@@ -4334,23 +3365,32 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
 </html>`;
 }
 
-function generateEmployeeDashboardPayslip() {
+async function generateEmployeeDashboardPayslip() {
   const company = currentCompany();
   const row = employeeDashboardPayslipRow;
   if (!company || !row) return alert("Refresh your dashboard before generating a payslip.");
 
   const win = window.open("", "_blank");
   if (!win) return alert("Allow popups for this site so Shiftly can open the payslip.");
+  const period = { start: el.employeePeriodStart.value, end: el.employeePeriodEnd.value };
+  const contextVersion = jobsContextVersion;
+  let saved = null;
+  try {
+    if (typeof payrollHistoryEnabled === "function" && payrollHistoryEnabled()) {
+      saved = await payrollHistoryRpc('get_own_payroll_snapshot', { c: company.id, s: period.start, t: period.end });
+      if (contextVersion !== jobsContextVersion || company.id !== currentCompany()?.id ||
+          period.start !== el.employeePeriodStart.value || period.end !== el.employeePeriodEnd.value) { win.close(); return; }
+    }
+  } catch (error) { win.close(); alert(`Cannot load the official payslip: ${error.message || error}`); return; }
   win.document.open();
-  win.document.write(buildPayslipDocument(company, row, {
-    start: el.employeePeriodStart.value,
-    end: el.employeePeriodEnd.value
-  }));
+  win.document.write(buildPayslipDocument(saved?.company || company,
+    saved ? { ...saved.document_row, _payrollRules: saved.rules } : row, period));
   win.document.close();
 }
 
 async function runPayrollReport(silent = false) {
   payrollSummaryRun = null;
+  if (typeof payrollHistoryReset === "function") payrollHistoryReset();
   const summaryVersion = ++payrollSummaryRunVersion;
   const contextVersion = jobsContextVersion;
   const company = currentCompany();
@@ -4370,6 +3410,14 @@ async function runPayrollReport(silent = false) {
     return;
   }
   let requestedLevyWeeks = null;
+  try {
+    // An official reprint uses its saved inputs, not today's levy/designation setup.
+    if (typeof payrollHistoryLoadFinal === "function" && await payrollHistoryLoadFinal(company, start, end, contextVersion)) return;
+  } catch (error) {
+    if (!silent) alert(`Failed to load payroll history: ${error.message || error}`);
+    else console.warn("Payroll history failed:", error.message || error);
+    return;
+  }
   if (isTrElectricalCompany(company) && !silent) {
     requestedLevyWeeks = Number(el.payrollLevyWeeks?.value || 0);
     if (![4, 5].includes(requestedLevyWeeks)) {
@@ -4410,7 +3458,7 @@ async function runPayrollReport(silent = false) {
       fetchPayrollAdjustments(company, start, end),
       isTrElectricalCompany(company)
         ? (requestedLevyWeeks
-          ? savePayrollLevyPeriod(company, start, end, requestedLevyWeeks)
+          ? Promise.resolve(previewPayrollLevyPeriod(company, start, end, requestedLevyWeeks))
           : fetchPayrollLevyPeriod(company, start, end))
         : Promise.resolve(null),
       fetchPayrollYtdContext(company, start, end)
@@ -4681,6 +3729,7 @@ function showEmployeeForm(show) {
   const on = !!show;
   renderTrElectricalPayrollControls();
   el.employeeFormBox.hidden = !on;
+  if (typeof payrollHistoryEmployeeForm === "function") payrollHistoryEmployeeForm(on);
   setToggleButton(el.btnToggleEmployeeForm, on, "Add employee", "Close add employee");
   if (!on) {
     editingEmployeeId = null;
@@ -8063,10 +7112,14 @@ async function saveCompanyEmployee() {
       rate,
       active
     };
-    const query = isEditing
+    const query = typeof payrollHistoryEnabled === "function" && payrollHistoryEnabled()
+      ? payrollHistorySaveEmployee(payload, isEditing)
+      : isEditing
       ? sb.from("employees").update(payload).eq(COMPANY_ID_COL, company.id).eq("employee_id", editingEmployeeId)
       : sb.from("employees").insert(payload);
+    const saveContextVersion = jobsContextVersion;
     const { error } = await query;
+    if (saveContextVersion !== jobsContextVersion || company.id !== currentCompany()?.id) return;
     if (error) return alert("Failed to save employee: " + error.message);
     el.companyEmployeeId.value = "";
     el.companyEmployeeName.value = "";

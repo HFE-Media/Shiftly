@@ -2733,6 +2733,20 @@ select{
 }
 #reader__scan_region > *{ display:none !important; }
 #reader__scan_region > video{ display:block !important; }
+.employeeYtdSection{margin-top:12px;padding:12px;border:1px solid rgba(212,175,55,.25);border-radius:10px;background:#141411;min-width:0;box-sizing:border-box;}
+.employeeYtdHeading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.employeeYtdHeading strong{font-size:10px;letter-spacing:.08em;color:#d4af37;}
+.employeeYtdHeading span{font-size:10px;color:#ded6b8;border:1px solid rgba(212,175,55,.22);border-radius:5px;padding:2px 5px;}
+.employeeYtdSection label{display:block;font-size:11px;color:#ccc7bb;margin-top:8px;}
+.employeeYtdSection [hidden]{display:none!important;}
+.employeeYtdSection .platformInput{display:block;width:100%;min-width:0;box-sizing:border-box;margin-top:5px;font-variant-numeric:tabular-nums;}
+.employeeYtdSection .mutedText{font-size:10px;line-height:1.5;margin-top:10px;overflow-wrap:anywhere;}
+#payrollFinalStatus{font-size:11px;line-height:1.3;}
+#btnFinalisePayroll{color:#d4af37;}
+#btnFinalisePayroll svg{width:18px;height:18px;display:block;color:var(--gold);}
+#btnFinalisePayroll:not(:disabled):hover{background:rgba(212,175,55,.12);border-color:#d4af37;}
+#btnFinalisePayroll:focus-visible{outline:2px solid #d4af37;outline-offset:3px;}
+#btnFinalisePayroll.isFinalised{opacity:1;color:#f0cd58;background:rgba(255,255,255,.035);border-color:rgba(212,175,55,.28);}
 </style>
 </head>
 
@@ -3033,9 +3047,13 @@ select{
             <div class="panelTitle">Payroll</div>
             <div class="mutedText">Hours and wage estimate from approved clock events.</div>
           </div>
+          <div class="platformActions">
+          <span id="payrollFinalStatus" class="mutedText" role="status">Not Finalised</span>
+          <button id="btnFinalisePayroll" class="miniIconBtn" type="button" title="Finalise Payroll" aria-label="Finalise Payroll" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m20 6-11 11-5-5" /></svg></button>
           <button id="btnExportPayroll" class="miniIconBtn" type="button" title="Generate payslip" aria-label="Generate payslip">
             <i class="ph ph-file-pdf"></i>
           </button>
+          </div>
         </div>
         <div class="panelBody">
           <details class="payrollRulesDetails" id="payrollRulesDetails">
@@ -3245,6 +3263,13 @@ select{
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
+                <div id="employeeYtdFields" class="employeeYtdSection" hidden>
+                  <div class="employeeYtdHeading"><strong>YEAR-TO-DATE PAYROLL</strong><span id="employeeYtdYear"></span></div>
+                  <label id="employeeYtdPayeLabel" hidden>YTD PAYE<input id="employeeYtdPaye" class="platformInput" inputmode="decimal" value="0.00" autocomplete="off" /></label>
+                  <label id="employeeYtdUifLabel" hidden>YTD UIF<input id="employeeYtdUif" class="platformInput" inputmode="decimal" value="0.00" autocomplete="off" /></label>
+                  <label for="employeeYtdReason">Correction reason (optional)<input id="employeeYtdReason" class="platformInput" placeholder="e.g. Accountant adjustment" /></label>
+                  <div id="employeeYtdMessage" class="mutedText" role="status"></div>
+                </div>
                 <button id="btnSaveEmployee" class="platformBtn" type="submit">Save Employee</button>
               </form>
             </div>
@@ -3529,6 +3554,18 @@ select{
     </div>
   </div>
 
+  <div class="modal sheetModal" id="payrollFinaliseModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="payrollFinaliseTitle">
+    <div class="modalCard modalSheet">
+      <div class="modalTitle" id="payrollFinaliseTitle">Finalise Payroll</div>
+      <div id="payrollFinaliseDetails" class="modalSub"></div>
+      <p class="mutedText">This creates the official payroll record for all employees shown. Applicable PAYE and employee UIF contribute to their YTD once. Generating payslips does not finalise payroll.</p>
+      <div id="payrollFinaliseError" class="mutedText" role="alert"></div>
+      <div class="modalActions">
+        <button id="btnCancelPayrollFinalise" class="btnGhost" type="button">Cancel</button>
+        <button id="btnConfirmPayrollFinalise" class="platformBtn" type="button">Finalise Payroll</button>
+      </div>
+    </div>
+  </div>
   <div class="modal sheetModal" id="payslipModal" aria-hidden="true">
     <div class="modalCard modalSheet">
       <button id="btnClosePayslip" class="modalCloseIcon" type="button" title="Close" aria-label="Close">
@@ -4201,7 +4238,10 @@ select{
 </main>
 
 <script src="./config.js"></script>
+  <script defer src="./payroll-history.js?v=2"></script>
+  <script defer src="./payroll-engine.js?v=1"></script>
   <script defer src="./app.js?v=197"></script>
+  <script defer src="./payroll-history-ui.js?v=4"></script>
   <script>window.SHIFTLY_JOBS_PHOTO_ENDPOINT = 'https://shiftly-jobs-photos.shiftly-static-app.workers.dev/photos';</script>
   <script defer src="./jobs-data.js?v=6"></script>
   <script defer src="./jobs.js?v=27"></script>
