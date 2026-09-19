@@ -130,7 +130,16 @@ async function confirmPayrollFinalisation() {
     $('payrollFinaliseError').textContent = `${error.message} No new request will be created on retry. You can also Run Payroll to retrieve the saved status.`;
   } finally { payrollHistory.busy = false; $('btnConfirmPayrollFinalise').disabled = false; }
 }
-async function payrollHistoryEmployeeForm(on) {
+async function payrollHistoryEmployeeForm(on, asAt = null) {
+  const previous = payrollHistory.edit;
+  const pendingValues = {};
+  if (asAt && previous) {
+    for (const key of ['paye','uif']) {
+      const input = $(key === 'paye' ? 'employeeYtdPaye' : 'employeeYtdUif');
+      try { if (payrollYtdInputDecimal(input.value) !== ph.decimal(previous.data[key])) pendingValues[key] = input.value; }
+      catch (_) { pendingValues[key] = input.value; }
+    }
+  }
   const version = ++payrollHistory.editVersion;
   payrollHistory.edit = null;
   const rules = activePayrollRules();
@@ -142,17 +151,23 @@ async function payrollHistoryEmployeeForm(on) {
   const company = currentCompany(); const ctx = jobsContextVersion;
   const employeeId = editingEmployeeId || '';
   const year = ph.taxYear(localDateInputValue(new Date()));
+  const cutoff = asAt === null ? localDateInputValue(new Date()) : asAt;
+  $('employeeYtdAsAt').value = cutoff;
+  $('employeeYtdAsAt').min = year;
+  $('employeeYtdAsAt').max = `${Number(year.slice(0,4))+1}-02-${new Date(Date.UTC(Number(year.slice(0,4))+1,2,0)).getUTCDate()}`;
   $('employeeYtdYear').textContent = `${year.slice(0,4)}/${String(Number(year.slice(0,4)) + 1).slice(-2)}`;
   $('employeeYtdMessage').textContent = 'Loading…';
   $('employeeYtdPaye').disabled = $('employeeYtdUif').disabled = true;
   try {
-    const data = await payrollHistoryRpc('get_employee_payroll_ytd', { c: company.id, e: employeeId, y: year });
+    ph.date(cutoff);
+    if (ph.taxYear(cutoff) !== year) throw Error('YTD as at must be within the displayed tax year.');
+    const data = await payrollHistoryRpc('get_employee_payroll_ytd_at', { c: company.id, e: employeeId, y: year, as_at: cutoff });
     if (version !== payrollHistory.editVersion || company.id !== currentCompany()?.id || ctx !== jobsContextVersion) return;
-    $('employeeYtdPaye').value = payrollYtdDisplay(data.paye);
-    $('employeeYtdUif').value = payrollYtdDisplay(data.uif);
-    $('employeeYtdReason').value = '';
-    payrollHistory.edit = { companyId: company.id, ctx, employeeId, data, year, request: crypto.randomUUID() };
-    $('employeeYtdMessage').textContent = 'ⓘ Changes are recorded in payroll audit history.';
+    $('employeeYtdPaye').value = pendingValues.paye ?? payrollYtdDisplay(data.paye);
+    $('employeeYtdUif').value = pendingValues.uif ?? payrollYtdDisplay(data.uif);
+    if (asAt === null) $('employeeYtdReason').value = '';
+    payrollHistory.edit = { companyId: company.id, ctx, employeeId, data, year, cutoff, cutoffChosen: asAt !== null, request: crypto.randomUUID() };
+    $('employeeYtdMessage').textContent = 'ⓘ Balances include this date. Later payroll remains additive. Changes are audited.';
     $('employeeYtdPaye').disabled = $('employeeYtdUif').disabled = false;
   } catch (error) { $('employeeYtdMessage').textContent = error.message; }
 }
@@ -161,21 +176,24 @@ async function payrollHistorySaveEmployee(payload, isEditing) {
     const edit = payrollHistory.edit;
     if (!edit || edit.companyId !== currentCompany()?.id || edit.ctx !== jobsContextVersion || (isEditing && edit.employeeId !== editingEmployeeId)) throw Error('Reopen the employee to load current YTD before saving.');
     if (edit.year !== ph.taxYear(localDateInputValue(new Date()))) throw Error('Tax year changed. Reopen the employee.');
+    if ($('employeeYtdAsAt').value !== edit.cutoff) throw Error('Wait for the selected YTD cutoff to load before saving.');
     const rules = activePayrollRules(); const targets = { reason: $('employeeYtdReason').value.trim() };
     if (rules.calculate_paye) {
       const value = payrollYtdInputDecimal($('employeeYtdPaye').value);
-      if (value !== ph.decimal(edit.data.paye) || !edit.data.paye_supplied) targets.paye = value;
+      if (value !== ph.decimal(edit.data.paye) || !edit.data.paye_supplied || edit.cutoffChosen) targets.paye = value;
     }
     if (rules.calculate_uif) {
       const value = payrollYtdInputDecimal($('employeeYtdUif').value);
-      if (value !== ph.decimal(edit.data.uif) || !edit.data.uif_supplied) targets.uif = value;
+      if (value !== ph.decimal(edit.data.uif) || !edit.data.uif_supplied || edit.cutoffChosen) targets.uif = value;
     }
+    if ('paye' in targets || 'uif' in targets) targets.as_at = edit.cutoff;
     await payrollHistoryRpc('save_employee_with_ytd', { c: payload.company_id, e: payload.employee_id, is_new: !isEditing,
       details: payload, targets, expected_revision: edit.data.revision, request: edit.request });
     return { error: null };
   } catch (error) { return { error }; }
 }
 $('btnFinalisePayroll').addEventListener('click', openPayrollFinalisation);
+$('employeeYtdAsAt').addEventListener('change', () => payrollHistoryEmployeeForm(true, $('employeeYtdAsAt').value));
 for (const id of ['employeeYtdPaye','employeeYtdUif']) {
   $(id).addEventListener('focus', () => {
     try { $(id).value = payrollYtdInputDecimal($(id).value); } catch (_) { /* Preserve invalid input for correction. */ }

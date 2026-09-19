@@ -30,6 +30,23 @@ test('employee YTD loads, all four conditional states, formatted save and option
   assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:''});
   el('employeeYtdPaye').value='R 3,400.50';el('employeeYtdUif').value='180.25';el('employeeYtdReason').value='Accountant adjustment';
   assert.equal((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error,null);
-  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:'Accountant adjustment',paye:'3400.50',uif:'180.25'});
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:'Accountant adjustment',paye:'3400.50',uif:'180.25',as_at:'2026-09-18'});
   assert.equal(calls.at(-1).name,'save_employee_with_ytd');assert.equal(calls.at(-1).args.expected_revision,'unchanged');
+});
+
+test('explicit YTD date reloads cutoff ledger, preserves typed accountant values, and is saved',async()=>{
+  const {c,calls,document}=fixture();const el=id=>document.getElementById(id);
+  await c.payrollHistoryEmployeeForm(true);
+  el('employeeYtdPaye').value='12500';el('employeeYtdUif').value='1600';
+  await c.payrollHistoryEmployeeForm(true,'2026-08-31');
+  assert.equal(calls.at(-1).name,'get_employee_payroll_ytd_at');
+  assert.equal(calls.at(-1).args.as_at,'2026-08-31');
+  assert.equal(el('employeeYtdPaye').value,'12500');
+  assert.equal((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error,null);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:'',paye:'12500.00',uif:'1600.00',as_at:'2026-08-31'});
+  const count=calls.length;
+  await c.payrollHistoryEmployeeForm(true,'2026-02-28');
+  assert.equal(calls.length,count,'wrong tax year never reaches RPC');
+  assert.match(el('employeeYtdMessage').textContent,/tax year/);
+  assert((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error);
 });
