@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v244"; // Job Card paired photo rows; caching strategy unchanged
+const CACHE_NAME = "shiftly-v246"; // Employee timesheet full header dates; caching strategy unchanged
 
 const ASSETS = [
   "/",
@@ -14,7 +14,7 @@ const ASSETS = [
   "/login.html",
   "/config.js",
   "/app.js",
-  "/app.js?v=197",
+  "/app.js?v=199",
   "/jobs.js?v=27",
   "/jobs.css?v=29",
   "/jobs-data.js?v=6",

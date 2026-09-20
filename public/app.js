@@ -2172,7 +2172,17 @@ function closePayrollBreakdown() {
 }
 
 function timesheetDateLabel(date) {
-  return new Intl.DateTimeFormat("en-ZA", { day: "numeric", month: "long", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat("en-ZA", { day: "numeric", month: "short", year: "numeric" })
+    .formatToParts(date)
+    .map((part) => part.type === "day" ? String(Number(part.value)) : part.value)
+    .join("");
+}
+
+function timesheetFullDateLabel(date) {
+  return new Intl.DateTimeFormat("en-ZA", { day: "numeric", month: "long", year: "numeric" })
+    .formatToParts(date)
+    .map((part) => part.type === "day" ? String(Number(part.value)) : part.value)
+    .join("");
 }
 
 function timesheetTimeLabel(date) {
@@ -2194,6 +2204,10 @@ function durationWords(totalMinutes) {
   return parts.join(" ") || "0 minutes";
 }
 
+function timesheetSiteLabel(event) {
+  return String(event?.site_name || "").trim();
+}
+
 function buildTimesheetRows(events, start, end, rulesInput) {
   const rules = normalisePayrollRules(rulesInput);
   const grouped = new Map();
@@ -2207,9 +2221,10 @@ function buildTimesheetRows(events, start, end, rulesInput) {
 
   return datesInRange(start, end).map((date) => {
     const dayEvents = (grouped.get(dateKey(date)) || []).sort((a, b) => a._time - b._time);
-    if (!dayEvents.length) return { date, firstIn: null, lastOut: null, breakMinutes: null, workedMinutes: 0, incomplete: false };
+    if (!dayEvents.length) return { date, firstIn: null, firstInSite: "", lastOut: null, breakMinutes: null, workedMinutes: 0, incomplete: false };
     let pendingIn = null;
     let firstIn = null;
+    let firstInSite = "";
     let lastOut = null;
     let workedMs = 0;
     let incomplete = false;
@@ -2219,7 +2234,10 @@ function buildTimesheetRows(events, start, end, rulesInput) {
       if (action === "IN") {
         if (pendingIn) incomplete = true;
         pendingIn = event._time;
-        if (!firstIn) firstIn = event._time;
+        if (!firstIn) {
+          firstIn = event._time;
+          firstInSite = timesheetSiteLabel(event);
+        }
       } else if (action === "OUT") {
         if (!pendingIn || event._time <= pendingIn) {
           incomplete = true;
@@ -2232,7 +2250,7 @@ function buildTimesheetRows(events, start, end, rulesInput) {
       }
     }
     if (pendingIn) incomplete = true;
-    if (incomplete) return { date, firstIn, lastOut, breakMinutes: null, workedMinutes: 0, incomplete: true };
+    if (incomplete) return { date, firstIn, firstInSite, lastOut, breakMinutes: null, workedMinutes: 0, incomplete: true };
 
     let workedMinutes = Math.max(0, Math.round(workedMs / 60000));
     let appliedDeduction = 0;
@@ -2247,7 +2265,7 @@ function buildTimesheetRows(events, start, end, rulesInput) {
     if (incomplete) workedMinutes = 0;
     const spanMinutes = firstIn && lastOut ? Math.max(0, Math.round((lastOut - firstIn) / 60000)) : 0;
     const sessionGap = Math.max(0, spanMinutes - Math.round(workedMs / 60000));
-    return { date, firstIn, lastOut, breakMinutes: sessionGap + appliedDeduction, workedMinutes, incomplete, automaticClockOut };
+    return { date, firstIn, firstInSite, lastOut, breakMinutes: sessionGap + appliedDeduction, workedMinutes, incomplete, automaticClockOut };
   });
 }
 
@@ -2255,8 +2273,8 @@ function renderTimesheetReport(report) {
   const company = report.company;
   el.timesheetCompany.textContent = company.name || "Company";
   el.timesheetEmployee.textContent = `${report.employee.employee_name || "Employee"} (${report.employee.employee_id})`;
-  el.timesheetPeriod.textContent = `${timesheetDateLabel(new Date(`${report.start}T00:00:00`))} - ${timesheetDateLabel(new Date(`${report.end}T00:00:00`))}`;
-  el.timesheetGenerated.textContent = timesheetDateLabel(new Date());
+  el.timesheetPeriod.textContent = `${timesheetFullDateLabel(new Date(`${report.start}T00:00:00`))} - ${timesheetFullDateLabel(new Date(`${report.end}T00:00:00`))}`;
+  el.timesheetGenerated.textContent = timesheetFullDateLabel(new Date());
   if (company.logo_url) {
     el.timesheetLogo.src = company.logo_url;
     el.timesheetLogo.hidden = false;
@@ -2267,6 +2285,7 @@ function renderTimesheetReport(report) {
     <tr${row.incomplete ? ` title="Clock record requires correction"` : row.automaticClockOut ? ` title="Automatic clock-out requires review"` : ""}>
       <td>${escapeHtml(new Intl.DateTimeFormat("en-ZA", { weekday: "long" }).format(row.date))}</td>
       <td>${escapeHtml(timesheetDateLabel(row.date))}</td>
+      <td>${row.firstInSite ? escapeHtml(row.firstInSite) : "&mdash;"}</td>
       <td>${row.firstIn ? escapeHtml(timesheetTimeLabel(row.firstIn)) : "&mdash;"}</td>
       <td class="${row.incomplete ? "timesheetIncomplete" : row.automaticClockOut ? "timesheetAuto" : ""}">${row.incomplete ? `<i class="ph ph-warning"></i> Incomplete` : row.lastOut ? `${row.automaticClockOut ? `<i class="ph ph-warning"></i> AUTO ` : ""}${escapeHtml(timesheetTimeLabel(row.lastOut))}` : "&mdash;"}</td>
       <td>${row.breakMinutes === null ? "&mdash;" : escapeHtml(durationClock(row.breakMinutes))}</td>
@@ -2283,12 +2302,12 @@ async function openEmployeeTimesheet() {
   const start = el.payrollStartDate.value;
   const end = el.payrollEndDate.value;
   if (!company || !employee || !start || !end) return alert("Run payroll and select an employee first.");
-  el.timesheetBody.innerHTML = `<tr><td colspan="6">Preparing timesheet...</td></tr>`;
+  el.timesheetBody.innerHTML = `<tr><td colspan="7">Preparing timesheet...</td></tr>`;
   el.timesheetModal.classList.add("show");
   el.timesheetModal.setAttribute("aria-hidden", "false");
   try {
     const { data, error } = await sb.from("clock_events")
-      .select("entry_id,created_at,action,employee_id,employee_name,result,message")
+      .select("entry_id,created_at,action,employee_id,employee_name,site_id,site_name,result,message")
       .eq(COMPANY_ID_COL, company.id)
       .eq("employee_id", employee.employee_id)
       .eq("result", "OK")
@@ -2302,7 +2321,7 @@ async function openEmployeeTimesheet() {
   } catch (error) {
     console.error("Timesheet failed:", error);
     currentTimesheetReport = null;
-    el.timesheetBody.innerHTML = `<tr><td colspan="6" class="timesheetIncomplete">Unable to prepare this timesheet. Close and try again.</td></tr>`;
+    el.timesheetBody.innerHTML = `<tr><td colspan="7" class="timesheetIncomplete">Unable to prepare this timesheet. Close and try again.</td></tr>`;
   }
 }
 
@@ -2312,9 +2331,9 @@ function closeEmployeeTimesheet() {
 }
 
 function buildTimesheetDocument(report, autoPrint = false) {
-  const rows = report.rows.map((row) => `<tr><td>${escapeHtml(new Intl.DateTimeFormat("en-ZA", { weekday: "long" }).format(row.date))}</td><td>${escapeHtml(timesheetDateLabel(row.date))}</td><td>${row.firstIn ? escapeHtml(timesheetTimeLabel(row.firstIn)) : "&mdash;"}</td><td>${row.incomplete ? "Incomplete" : row.lastOut ? escapeHtml(timesheetTimeLabel(row.lastOut)) : "&mdash;"}</td><td>${row.breakMinutes === null ? "&mdash;" : escapeHtml(durationClock(row.breakMinutes))}</td><td>${row.incomplete ? "Incomplete" : escapeHtml(durationClock(row.workedMinutes))}</td></tr>`).join("");
+  const rows = report.rows.map((row) => `<tr><td>${escapeHtml(new Intl.DateTimeFormat("en-ZA", { weekday: "long" }).format(row.date))}</td><td>${escapeHtml(timesheetDateLabel(row.date))}</td><td>${row.firstInSite ? escapeHtml(row.firstInSite) : "&mdash;"}</td><td>${row.firstIn ? escapeHtml(timesheetTimeLabel(row.firstIn)) : "&mdash;"}</td><td>${row.incomplete ? "Incomplete" : row.lastOut ? escapeHtml(timesheetTimeLabel(row.lastOut)) : "&mdash;"}</td><td>${row.breakMinutes === null ? "&mdash;" : escapeHtml(durationClock(row.breakMinutes))}</td><td>${row.incomplete ? "Incomplete" : escapeHtml(durationClock(row.workedMinutes))}</td></tr>`).join("");
   const logo = report.company.logo_url ? `<img src="${escapeHtml(report.company.logo_url)}" alt="Company logo">` : "";
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Employee Timesheet</title><style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}body{margin:0;background:#ddd;color:#171717;font:12px Arial,sans-serif}.tools{position:fixed;right:12px;top:10px}.tools button{padding:10px 14px;font-weight:800;background:#fff;border:1px solid #111;border-radius:5px}.page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:16mm}.head{display:flex;gap:14px;align-items:center;border-bottom:2px solid #171717;padding-bottom:12px}.head img{width:58px;height:58px;object-fit:contain}.head h1{margin:2px 0;color:#a87908}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0}.meta div{border:1px solid #ddd;padding:9px}.meta span{display:block;color:#666;font-size:9px;text-transform:uppercase}table{width:100%;border-collapse:collapse}thead{display:table-header-group}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f1ec;text-transform:uppercase;font-size:9px}th:nth-child(n+3),td:nth-child(n+3){text-align:right}tr{break-inside:avoid}.total{text-align:right;margin-top:14px;font-weight:800}.footer{margin-top:24px;color:#666;font-size:9px;display:flex;justify-content:space-between}@media print{body{background:#fff}.tools{display:none}.page{width:auto;min-height:0;padding:0}}</style></head><body><div class="tools"><button onclick="window.print()">Print / Save PDF</button></div><main class="page"><header class="head">${logo}<div><b>${escapeHtml(report.company.name || "Company")}</b><h1>Employee Timesheet</h1></div></header><section class="meta"><div><span>Employee</span><b>${escapeHtml(report.employee.employee_name || "Employee")}</b><br>${escapeHtml(report.employee.employee_id)}</div><div><span>Period</span><b>${escapeHtml(timesheetDateLabel(new Date(`${report.start}T00:00:00`)))} - ${escapeHtml(timesheetDateLabel(new Date(`${report.end}T00:00:00`)))}</b><br>Generated ${escapeHtml(timesheetDateLabel(new Date()))}</div></section><table><thead><tr><th>Day</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Break</th><th>Hours Worked</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total hours: ${escapeHtml(durationWords(report.totalMinutes))}</div><footer class="footer"><span>Generated by Shiftly</span><span>Employee Timesheet</span></footer></main>${autoPrint ? `<script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250))<\/script>` : ""}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Employee Timesheet</title><style>@page{size:A4 portrait;margin:14mm}*{box-sizing:border-box}body{margin:0;background:#ddd;color:#171717;font:12px Arial,sans-serif}.tools{position:fixed;right:12px;top:10px}.tools button{padding:10px 14px;font-weight:800;background:#fff;border:1px solid #111;border-radius:5px}.page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:16mm}.head{display:flex;gap:14px;align-items:center;border-bottom:2px solid #171717;padding-bottom:12px}.head img{width:58px;height:58px;object-fit:contain}.head h1{margin:2px 0;color:#a87908}.meta{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px 0}.meta div{border:1px solid #ddd;padding:9px}.meta span{display:block;color:#666;font-size:9px;text-transform:uppercase}table{width:100%;border-collapse:collapse}thead{display:table-header-group}th,td{padding:7px 6px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f1ec;text-transform:uppercase;font-size:8px}th:nth-child(n+4),td:nth-child(n+4){text-align:right}tr{break-inside:avoid}.total{text-align:right;margin-top:14px;font-weight:800}.footer{margin-top:24px;color:#666;font-size:9px;display:flex;justify-content:space-between}@media print{body{background:#fff}.tools{display:none}.page{width:auto;min-height:0;padding:0}}</style></head><body><div class="tools"><button onclick="window.print()">Print / Save PDF</button></div><main class="page"><header class="head">${logo}<div><b>${escapeHtml(report.company.name || "Company")}</b><h1>Employee Timesheet</h1></div></header><section class="meta"><div><span>Employee</span><b>${escapeHtml(report.employee.employee_name || "Employee")}</b><br>${escapeHtml(report.employee.employee_id)}</div><div><span>Period</span><b>${escapeHtml(timesheetFullDateLabel(new Date(`${report.start}T00:00:00`)))} - ${escapeHtml(timesheetFullDateLabel(new Date(`${report.end}T00:00:00`)))}</b><br>Generated ${escapeHtml(timesheetFullDateLabel(new Date()))}</div></section><table><thead><tr><th>Day</th><th>Date</th><th>Clock-in Site</th><th>Clock In</th><th>Clock Out</th><th>Break</th><th>Hours Worked</th></tr></thead><tbody>${rows}</tbody></table><div class="total">Total hours: ${escapeHtml(durationWords(report.totalMinutes))}</div><footer class="footer"><span>Generated by Shiftly</span><span>Employee Timesheet</span></footer></main>${autoPrint ? `<script>window.addEventListener("load",()=>setTimeout(()=>window.print(),250))<\/script>` : ""}</body></html>`;
 }
 
 function openTimesheetPrint(autoPrint = false) {
