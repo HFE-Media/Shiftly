@@ -56,9 +56,19 @@ async function payrollHistoryLoadFinal(c, s, t, version) {
   const data = await payrollHistoryRpc('get_payroll_history', { c: c.id, s, t });
   if (!payrollHistoryCurrent(c, s, t, version) || runVersion !== payrollSummaryRunVersion) return true;
   if (data.run) return payrollHistoryDisplay(data, c, s, t, version);
-  const preview = await payrollAuthority({action:'preview',c:c.id,start:s,end:t,
-    levyWeeks:isTrElectricalCompany(c) ? Number(el.payrollLevyWeeks?.value || 0) : null});
+  const [preview, loadedDeductionTypes, loadedPayrollItemDefinitions, loadedDeductions, loadedAdjustments] = await Promise.all([
+    payrollAuthority({action:'preview',c:c.id,start:s,end:t,
+      levyWeeks:isTrElectricalCompany(c) ? Number(el.payrollLevyWeeks?.value || 0) : null}),
+    fetchCompanyDeductionTypes(c),
+    fetchPayrollItemDefinitions(),
+    fetchPayrollDeductions(c, s, t),
+    fetchPayrollAdjustments(c, s, t)
+  ]);
   if (!payrollHistoryCurrent(c, s, t, version) || runVersion !== payrollSummaryRunVersion) return true;
+  companyDeductionTypes = loadedDeductionTypes;
+  payrollItemDefinitions = loadedPayrollItemDefinitions;
+  payrollDeductions = loadedDeductions;
+  payrollAdjustments = loadedAdjustments;
   companyPayrollRules = normalisePayrollRules(preview.rules);
   renderPayrollRows(preview.rows.map(r=>({...r,_payrollRules:preview.rules})));
   payrollSummaryRun = {companyId:c.id,contextVersion:version,start:s,end:t,rows:payrollRows,companySnapshot:preview.company};
@@ -134,8 +144,8 @@ async function payrollHistoryEmployeeForm(on, asAt = null) {
   const previous = payrollHistory.edit;
   const pendingValues = {};
   if (asAt && previous) {
-    for (const key of ['paye','uif']) {
-      const input = $(key === 'paye' ? 'employeeYtdPaye' : 'employeeYtdUif');
+    for (const key of ['paye','uif','sdl']) {
+      const input = $(`employeeYtd${key[0].toUpperCase()}${key.slice(1)}`);
       try { if (payrollYtdInputDecimal(input.value) !== ph.decimal(previous.data[key])) pendingValues[key] = input.value; }
       catch (_) { pendingValues[key] = input.value; }
     }
@@ -144,9 +154,10 @@ async function payrollHistoryEmployeeForm(on, asAt = null) {
   payrollHistory.edit = null;
   const rules = activePayrollRules();
   const enabled = payrollHistoryEnabled();
-  $('employeeYtdFields').hidden = !on || !enabled || !(rules.calculate_paye || rules.calculate_uif);
+  $('employeeYtdFields').hidden = !on || !enabled || !(rules.calculate_paye || rules.calculate_uif || rules.calculate_sdl);
   $('employeeYtdPayeLabel').hidden = !rules.calculate_paye;
   $('employeeYtdUifLabel').hidden = !rules.calculate_uif;
+  $('employeeYtdSdlLabel').hidden = !rules.calculate_sdl;
   if (!on || !enabled) return;
   const company = currentCompany(); const ctx = jobsContextVersion;
   const employeeId = editingEmployeeId || '';
@@ -157,7 +168,7 @@ async function payrollHistoryEmployeeForm(on, asAt = null) {
   $('employeeYtdAsAt').max = `${Number(year.slice(0,4))+1}-02-${new Date(Date.UTC(Number(year.slice(0,4))+1,2,0)).getUTCDate()}`;
   $('employeeYtdYear').textContent = `${year.slice(0,4)}/${String(Number(year.slice(0,4)) + 1).slice(-2)}`;
   $('employeeYtdMessage').textContent = 'Loading…';
-  $('employeeYtdPaye').disabled = $('employeeYtdUif').disabled = true;
+  $('employeeYtdPaye').disabled = $('employeeYtdUif').disabled = $('employeeYtdSdl').disabled = true;
   try {
     ph.date(cutoff);
     if (ph.taxYear(cutoff) !== year) throw Error('YTD as at must be within the displayed tax year.');
@@ -165,10 +176,15 @@ async function payrollHistoryEmployeeForm(on, asAt = null) {
     if (version !== payrollHistory.editVersion || company.id !== currentCompany()?.id || ctx !== jobsContextVersion) return;
     $('employeeYtdPaye').value = pendingValues.paye ?? payrollYtdDisplay(data.paye);
     $('employeeYtdUif').value = pendingValues.uif ?? payrollYtdDisplay(data.uif);
+    $('employeeYtdSdl').value = pendingValues.sdl ?? payrollYtdDisplay(data.sdl || 0);
+    if ($('companyEmployeeSdlCircumstance')) $('companyEmployeeSdlCircumstance').value = data.sdl_circumstance?.circumstance || 'standard';
+    if ($('companyEmployeeSdlEffectiveFrom')) $('companyEmployeeSdlEffectiveFrom').value = data.sdl_circumstance?.effective_from || $('companyEmployeeEmploymentDate').value;
+    if ($('companyEmployeeSdlEvidence')) $('companyEmployeeSdlEvidence').value = data.sdl_circumstance?.evidence_reference || '';
+    if (typeof setEmployeeSdlTreatmentState === 'function') setEmployeeSdlTreatmentState(data.sdl_circumstance?.circumstance || 'standard');
     if (asAt === null) $('employeeYtdReason').value = '';
     payrollHistory.edit = { companyId: company.id, ctx, employeeId, data, year, cutoff, cutoffChosen: asAt !== null, request: crypto.randomUUID() };
     $('employeeYtdMessage').textContent = 'ⓘ Balances include this date. Later payroll remains additive. Changes are audited.';
-    $('employeeYtdPaye').disabled = $('employeeYtdUif').disabled = false;
+    $('employeeYtdPaye').disabled = $('employeeYtdUif').disabled = $('employeeYtdSdl').disabled = false;
   } catch (error) { $('employeeYtdMessage').textContent = error.message; }
 }
 async function payrollHistorySaveEmployee(payload, isEditing) {
@@ -186,15 +202,86 @@ async function payrollHistorySaveEmployee(payload, isEditing) {
       const value = payrollYtdInputDecimal($('employeeYtdUif').value);
       if (value !== ph.decimal(edit.data.uif) || !edit.data.uif_supplied || edit.cutoffChosen) targets.uif = value;
     }
-    if ('paye' in targets || 'uif' in targets) targets.as_at = edit.cutoff;
+    if (rules.calculate_sdl) {
+      const value = payrollYtdInputDecimal($('employeeYtdSdl').value);
+      if (value !== ph.decimal(edit.data.sdl || 0) || !edit.data.sdl_supplied || edit.cutoffChosen) targets.sdl = value;
+    }
+    if ('paye' in targets || 'uif' in targets || 'sdl' in targets) targets.as_at = edit.cutoff;
     await payrollHistoryRpc('save_employee_with_ytd', { c: payload.company_id, e: payload.employee_id, is_new: !isEditing,
       details: payload, targets, expected_revision: edit.data.revision, request: edit.request });
     return { error: null };
   } catch (error) { return { error }; }
 }
+const payrollReports = { periods: [], companyId: '', contextVersion: 0 };
+const payrollReportApi = window.ShiftlyPayrollReports;
+function payrollReportsUpdateVisibility(rules = activePayrollRules()) {
+  const button = $('btnPayrollReports');
+  if (!button) return;
+  button.hidden = !(canUseCompanyDashboard() && payrollHistoryEnabled() && payrollReportApi?.reportsApplicable(rules));
+}
+function closePayrollReports() {
+  $('payrollReportsModal').classList.remove('show');
+  $('payrollReportsModal').setAttribute('aria-hidden','true');
+  $('payrollReportsError').textContent = '';
+}
+function updatePayrollReportsPeriodMeta() {
+  const period = payrollReports.periods.find(item => item.id === $('payrollReportsPeriod').value);
+  $('payrollReportsPeriodMeta').textContent = period ? `${period.range} · Finalised` : '';
+}
+async function openPayrollReports() {
+  const company = currentCompany();
+  if (!company || !canUseCompanyDashboard() || !payrollReportApi?.reportsApplicable(activePayrollRules())) return;
+  const modal = $('payrollReportsModal');
+  modal.classList.add('show'); modal.setAttribute('aria-hidden','false');
+  $('payrollReportsError').textContent = '';
+  $('payrollReportsLoading').textContent = 'Loading finalised payroll periods…';
+  $('payrollReportsForm').hidden = true; $('payrollReportsEmpty').hidden = true;
+  const contextVersion = jobsContextVersion;
+  payrollReports.companyId = company.id; payrollReports.contextVersion = contextVersion; payrollReports.periods = [];
+  try {
+    const periods = payrollReportApi.normalisePeriods(await payrollHistoryRpc('get_payroll_report_periods', { c: company.id }));
+    if (company.id !== currentCompany()?.id || contextVersion !== jobsContextVersion) return closePayrollReports();
+    payrollReports.periods = periods;
+    $('payrollReportsLoading').textContent = periods.length ? 'Select a finalised payroll period and report.' : '';
+    $('payrollReportsEmpty').hidden = periods.length !== 0;
+    $('payrollReportsForm').hidden = periods.length === 0;
+    $('payrollReportsPeriod').innerHTML = periods.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join('');
+    $('payrollReportsType').innerHTML = payrollReportApi.TYPES.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}</option>`).join('');
+    if (periods.length) $('payrollReportsPeriod').value = periods[0].id;
+    updatePayrollReportsPeriodMeta();
+  } catch (error) {
+    $('payrollReportsLoading').textContent = '';
+    $('payrollReportsForm').hidden = true;
+    $('payrollReportsError').textContent = error.message || 'Payroll reports are unavailable.';
+  }
+}
+async function generatePayrollReport() {
+  const company = currentCompany();
+  const period = payrollReports.periods.find(item => item.id === $('payrollReportsPeriod').value);
+  const type = $('payrollReportsType').value;
+  if (!company || company.id !== payrollReports.companyId || payrollReports.contextVersion !== jobsContextVersion || !period || !payrollReportApi.TYPES.some(item => item.id === type)) {
+    $('payrollReportsError').textContent = 'Reload Payroll Reports before generating.'; return;
+  }
+  const win = window.open('', '_blank');
+  if (!win) { $('payrollReportsError').textContent = 'Allow popups so Shiftly can open the report.'; return; }
+  $('btnGeneratePayrollReport').disabled = true; $('payrollReportsError').textContent = '';
+  try {
+    const data = await payrollHistoryRpc('get_payroll_report', { c: company.id, r_id: period.id });
+    if (company.id !== currentCompany()?.id || payrollReports.contextVersion !== jobsContextVersion || data?.run?.id !== period.id || data?.run?.company?.id !== company.id) {
+      win.close(); throw Error('Company or payroll period changed. Reload Payroll Reports.');
+    }
+    win.document.open(); win.document.write(payrollReportApi.documentHtml(data, type)); win.document.close();
+  } catch (error) {
+    win.close(); $('payrollReportsError').textContent = error.message || 'Could not generate payroll report.';
+  } finally { $('btnGeneratePayrollReport').disabled = false; }
+}
 $('btnFinalisePayroll').addEventListener('click', openPayrollFinalisation);
+$('btnPayrollReports').addEventListener('click', openPayrollReports);
+$('btnClosePayrollReports').addEventListener('click', closePayrollReports);
+$('payrollReportsPeriod').addEventListener('change', updatePayrollReportsPeriodMeta);
+$('btnGeneratePayrollReport').addEventListener('click', generatePayrollReport);
 $('employeeYtdAsAt').addEventListener('change', () => payrollHistoryEmployeeForm(true, $('employeeYtdAsAt').value));
-for (const id of ['employeeYtdPaye','employeeYtdUif']) {
+for (const id of ['employeeYtdPaye','employeeYtdUif','employeeYtdSdl']) {
   $(id).addEventListener('focus', () => {
     try { $(id).value = payrollYtdInputDecimal($(id).value); } catch (_) { /* Preserve invalid input for correction. */ }
   });
@@ -204,10 +291,11 @@ for (const id of ['employeeYtdPaye','employeeYtdUif']) {
 }
 $('btnCancelPayrollFinalise').addEventListener('click', closePayrollFinalisation);
 $('btnConfirmPayrollFinalise').addEventListener('click', confirmPayrollFinalisation);
-document.addEventListener('keydown', event => { if (event.key === 'Escape') closePayrollFinalisation(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape') { closePayrollFinalisation(); closePayrollReports(); } });
 for (const id of ['payrollStartDate','payrollEndDate','payrollLevyWeeks']) $(id)?.addEventListener('change', payrollHistoryReset);
 window.addEventListener('shiftly:company-context', () => {
   payrollHistoryReset(); payrollHistory.editVersion++; payrollHistory.edit=null; payrollHistory.pending=null;
+  payrollReports.periods=[]; payrollReports.companyId=''; payrollReportsUpdateVisibility({calculate_paye:false,calculate_uif:false}); closePayrollReports();
   $('payrollFinaliseModal').classList.remove('show');
   $('payrollFinaliseModal').setAttribute('aria-hidden','true');
 });

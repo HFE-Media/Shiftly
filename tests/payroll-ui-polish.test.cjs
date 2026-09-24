@@ -2,8 +2,8 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const ph=require('../public/payroll-history.js');
 function fixture(){
   const {document,window}=require('linkedom').parseHTML(fs.readFileSync('public/login.html','utf8'));
-  const rules={calculate_paye:true,calculate_uif:true},calls=[];
-  const data={paye:'3381.00',uif:'177.12',paye_supplied:true,uif_supplied:true,revision:'unchanged'};
+  const rules={calculate_paye:true,calculate_uif:true,calculate_sdl:false},calls=[];
+  const data={paye:'3381.00',uif:'177.12',sdl:'650.00',paye_supplied:true,uif_supplied:true,sdl_supplied:true,revision:'unchanged'};
   const c={document,window:Object.assign(window,{ShiftlyPayrollHistory:ph}),$:id=>document.getElementById(id),APP_CONFIG:{PAYROLL_HISTORY_LOCAL:true,SUPABASE_URL:'http://127.0.0.1:5198'},
     activePayrollRules:()=>rules,currentCompany:()=>({id:'synthetic'}),jobsContextVersion:1,editingEmployeeId:'E1',localDateInputValue:()=> '2026-09-18',crypto:require('node:crypto').webcrypto,
     sb:{rpc:async(name,args)=>{calls.push({name,args});return {data};}}};
@@ -32,6 +32,18 @@ test('employee YTD loads, all four conditional states, formatted save and option
   assert.equal((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error,null);
   assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:'Accountant adjustment',paye:'3400.50',uif:'180.25',as_at:'2026-09-18'});
   assert.equal(calls.at(-1).name,'save_employee_with_ytd');assert.equal(calls.at(-1).args.expected_revision,'unchanged');
+});
+
+test('SDL YTD is visible, loaded and saved when SDL is enabled',async()=>{
+  const {c,rules,calls,document}=fixture();const el=id=>document.getElementById(id);
+  rules.calculate_paye=rules.calculate_uif=false;rules.calculate_sdl=true;
+  await c.payrollHistoryEmployeeForm(true);
+  assert.equal(el('employeeYtdFields').hidden,false);
+  assert.equal(el('employeeYtdPayeLabel').hidden,true);assert.equal(el('employeeYtdUifLabel').hidden,true);
+  assert.equal(el('employeeYtdSdlLabel').hidden,false);assert.equal(el('employeeYtdSdl').value,'R 650.00');
+  el('employeeYtdSdl').value='700.25';
+  assert.equal((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error,null);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:'',sdl:'700.25',as_at:'2026-09-18'});
 });
 
 test('explicit YTD date reloads cutoff ledger, preserves typed accountant values, and is saved',async()=>{

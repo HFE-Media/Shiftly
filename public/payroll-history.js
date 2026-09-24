@@ -50,10 +50,20 @@
       .reduce((n, d) => n + Number(d.amount), 0));
     return {
       employee_id: String(row.employee_id), gross_remuneration: money(snapshot.gross || 0),
-      retirement_fund_contributions: sum('provident'),
+      retirement_fund_contributions: money(row.retirement_fund_contributions === undefined ? sum('provident') : row.retirement_fund_contributions),
       paye_deducted: rules.calculate_paye ? sum('tax') : '0.00',
       employee_uif: rules.calculate_uif ? sum('uif') : '0.00',
       ...(row.employer_uif !== undefined ? {employer_uif:money(row.employer_uif),uif_liable_remuneration:money(row.uif_liable_remuneration)} : {}),
+      ...(row.sdl_amount !== undefined ? {
+        sdl_enabled: rules.calculate_sdl === true,
+        sdl_leviable_remuneration: money(row.sdl_leviable_remuneration),
+        sdl_amount: money(row.sdl_amount),
+        sdl_rate: String(row.sdl_rate),
+        sdl_rate_version: String(row.sdl_rate_version || ''),
+        sdl_configuration_id: row.sdl_configuration_id || null,
+        sdl_circumstance: clone(row.sdl_circumstance || {}),
+        sdl_classifications: clone(row.sdl_classifications || [])
+      } : {}),
       document_row: snapshot
     };
   }
@@ -62,7 +72,7 @@
       asOfDate: record?.as_of_date || '', completedPeriods: Number(record?.completed_periods || 0),
       finalizedPeriods: Number(record?.finalized_periods || 0), previousGross: Number(record?.gross || 0),
       previousRetirement: Number(record?.retirement || 0), previousPaye: Number(record?.paye || 0),
-      previousUif: Number(record?.uif || 0) };
+      previousUif: Number(record?.uif || 0), previousSdl: Number(record?.sdl || 0) };
   }
   function localBackend(config, location) {
     // Local client construction must never admit a hosted backend.

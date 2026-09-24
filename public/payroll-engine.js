@@ -103,6 +103,7 @@ const DEFAULT_PAYROLL_RULES = Object.freeze({
   public_holiday_standard_hours: 8,
   calculate_uif: false,
   calculate_paye: false,
+  calculate_sdl: false,
   work_week_enabled: false,
   work_week: DEFAULT_WORK_WEEK,
   daily_overtime_enabled: false,
@@ -224,6 +225,8 @@ function normalisePayrollRules(rules = {}) {
     public_holiday_standard_hours: numberField("public_holiday_standard_hours"),
     calculate_uif: merged.calculate_uif === true || merged.calculate_uif === "true",
     calculate_paye: merged.calculate_paye === true || merged.calculate_paye === "true",
+    calculate_sdl: merged.calculate_sdl === true || merged.calculate_sdl === "true",
+    sdl_effective_from: /^\d{4}-\d{2}-\d{2}$/.test(String(merged.sdl_effective_from || "")) ? String(merged.sdl_effective_from) : "",
     work_week_enabled: overtimeMethod !== "cycle_only" && (merged.work_week_enabled === true || merged.work_week_enabled === "true"),
     work_week: normaliseWorkWeek(merged.work_week),
     daily_overtime_enabled: overtimeMethod === "daily_cycle" && (merged.daily_overtime_enabled === true || merged.daily_overtime_enabled === "true"),
@@ -932,6 +935,7 @@ function normaliseAdjustment(row = {}) {
     employee_id: row.employee_id || "",
     employee_name: row.employee_name || "",
     adjustment_type: row.adjustment_type || "",
+    payroll_item_definition_id: row.payroll_item_definition_id || "",
     description: row.description || "",
     hours: moneyNumber(row.hours),
     amount: moneyNumber(row.amount),
@@ -955,7 +959,9 @@ function attachDeductionsToPayrollRows(rows, deductions, rulesInput = activePayr
     rules.calculate_uif ? "uif" : ""
   ].filter(Boolean));
   const byEmployee = new Map();
-  for (const deduction of (deductions || []).map(normaliseDeduction).filter((item) => item.active)) {
+  for (const deduction of (deductions || []).map(normaliseDeduction).filter((item) => (
+    item.active && (!item.payroll_item_definition_id || item.payroll_item_classification?.calculation_status === "payroll_active")
+  ))) {
     const standardField = STANDARD_DEDUCTION_FIELDS.find((field) => deductionAmountForField([deduction], field) > 0);
     if (standardField && autoKeys.has(standardField.key)) continue;
     const key = String(deduction.employee_id || "");
@@ -965,6 +971,7 @@ function attachDeductionsToPayrollRows(rows, deductions, rulesInput = activePayr
   return (rows || []).map((row) => {
     const existingDeductions = byEmployee.get(String(row.employee_id || "")) || [];
     const employeeYtdContext = payrollEmployeeYtdContext(ytdContext, row.employee_id);
+    const retirementContribution = retirementContributionAmount(existingDeductions);
     const rowDeductions = [
       ...existingDeductions,
       ...statutoryDeductionRows(row, rules, existingDeductions, employeeYtdContext)
@@ -977,6 +984,7 @@ function attachDeductionsToPayrollRows(rows, deductions, rulesInput = activePayr
       deductions: rowDeductions,
       totalDeductions,
       net: Math.max(0, gross - totalDeductions),
+      retirement_fund_contributions: retirementContribution,
       ytd: taxYtd
     };
   });
@@ -989,6 +997,9 @@ function normaliseDeduction(row = {}) {
     employee_id: row.employee_id || "",
     employee_name: row.employee_name || "",
     deduction_type_id: row.deduction_type_id || "",
+    payroll_item_definition_id: row.payroll_item_definition_id || "",
+    payroll_item_classification_id: row.payroll_item_classification_id || "",
+    payroll_item_classification: row.payroll_item_classification || null,
     description: row.description || "",
     amount: moneyNumber(row.amount),
     period_start: row.period_start || "",
@@ -996,6 +1007,19 @@ function normaliseDeduction(row = {}) {
     active: row.active !== false,
     automatic_levy: row.automatic_levy === true
   };
+}
+
+function retirementContributionAmount(deductions) {
+  const structured = (deductions || []).filter((item) => [
+    "employee_pension_fund_contribution",
+    "employee_provident_fund_contribution",
+    "employee_retirement_annuity_fund_contribution"
+  ].includes(String(item.payroll_item_classification?.statutory_category || "")))
+    .reduce((sum, item) => sum + moneyNumber(item.amount), 0);
+  const legacyProvident = isTrElectricalCompany()
+    ? Math.max(0, deductionAmountForField((deductions || []).filter((item) => !item.payroll_item_classification), { label: "Provident" }))
+    : 0;
+  return structured + legacyProvident;
 }
 
 function deductionAmountForField(deductions, field) {
@@ -1259,7 +1283,7 @@ function usesPayrollYtd(company, periodEnd) {
 function payrollYtdTakeoverDate(company = currentCompany()) {
   return PAYROLL_YTD_TAKEOVER_DATES[String(company?.id || "")] || "";
 }
-return {calculatePayroll,normalisePayrollRules,normaliseWorkWeek,normaliseTimeValue,buildPayrollBreakdown,isTrElectricalCompany,buildTrElectricalPayrollBreakdown,payrollHourlyRateForPayType,dailyHourlyRate,dailyStandardHours,monthlyHourlyRate,moneyNumber,payrollEventTime,dateKey,localDateInputValue,dateAtPayrollMinutes,normalThresholdHours,workWeekForDate,buildMixocronDailyParts,timeValueToMinutes,mixocronWallEventTime,chooseMixocronDayTimes,isPublicHoliday,splitSegmentByDay,splitShiftByDay,addHoursByRule,buildShiftPartsForPayroll,allocateDailyThresholdOnly,datesInRange,shouldApplyPublicHolidayTopup,normaliseNbceiDesignationCode,attachAdjustmentsToPayrollRows,normaliseAdjustment,isStandardAdjustment,attachDeductionsToPayrollRows,normaliseDeduction,deductionAmountForField,payrollEmployeeYtdContext,statutoryDeductionRows,periodCountForPayCycle,calculateCumulativePaye,calculateAnnualTax2027,trElectricalAutomaticLevyDeductions,validatePayrollYtdContinuity,expectedMonthlyPeriodsBefore,previewPayrollLevyPeriod,usesPayrollYtd,payrollYtdTakeoverDate};
+return {calculatePayroll,normalisePayrollRules,normaliseWorkWeek,normaliseTimeValue,buildPayrollBreakdown,isTrElectricalCompany,buildTrElectricalPayrollBreakdown,payrollHourlyRateForPayType,dailyHourlyRate,dailyStandardHours,monthlyHourlyRate,moneyNumber,payrollEventTime,dateKey,localDateInputValue,dateAtPayrollMinutes,normalThresholdHours,workWeekForDate,buildMixocronDailyParts,timeValueToMinutes,mixocronWallEventTime,chooseMixocronDayTimes,isPublicHoliday,splitSegmentByDay,splitShiftByDay,addHoursByRule,buildShiftPartsForPayroll,allocateDailyThresholdOnly,datesInRange,shouldApplyPublicHolidayTopup,normaliseNbceiDesignationCode,attachAdjustmentsToPayrollRows,normaliseAdjustment,isStandardAdjustment,attachDeductionsToPayrollRows,normaliseDeduction,deductionAmountForField,retirementContributionAmount,payrollEmployeeYtdContext,statutoryDeductionRows,periodCountForPayCycle,calculateCumulativePaye,calculateAnnualTax2027,trElectricalAutomaticLevyDeductions,validatePayrollYtdContinuity,expectedMonthlyPeriodsBefore,previewPayrollLevyPeriod,usesPayrollYtd,payrollYtdTakeoverDate};
 }
 return Object.freeze({create,version:'payroll-engine-1'});
 });

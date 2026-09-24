@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v246"; // Employee timesheet full header dates; caching strategy unchanged
+const CACHE_NAME = "shiftly-v252"; // Phase 1-3 manual QA cleanup
 
 const ASSETS = [
   "/",
@@ -14,7 +14,9 @@ const ASSETS = [
   "/login.html",
   "/config.js",
   "/app.js",
-  "/app.js?v=199",
+  "/app.js?v=204",
+  "/payroll-reports.js?v=2",
+  "/payroll-history-ui.js?v=9",
   "/jobs.js?v=27",
   "/jobs.css?v=29",
   "/jobs-data.js?v=6",

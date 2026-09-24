@@ -38,6 +38,7 @@ const COMPANY_PAYROLL_RULES_TABLE = "company_payroll_rules";
 const COMPANY_DEDUCTION_TYPES_TABLE = "company_deduction_types";
 const PAYROLL_DEDUCTIONS_TABLE = "payroll_deductions";
 const PAYROLL_ADJUSTMENTS_TABLE = "payroll_adjustments";
+const PAYROLL_ITEM_DEFINITIONS_TABLE = "payroll_item_definitions";
 const COMPANY_PAYROLL_LEVY_PERIODS_TABLE = "company_payroll_levy_periods";
 const EMPLOYEE_PAYROLL_YTD_OPENING_TABLE = "employee_payroll_ytd_opening_balances";
 const EMPLOYEE_PAYROLL_PERIOD_TOTALS_TABLE = "employee_payroll_period_totals";
@@ -159,11 +160,18 @@ let payrollDeductions = [];
 let payrollDeductionsAvailable = true;
 let payrollAdjustments = [];
 let payrollAdjustmentsAvailable = true;
+let payrollItemDefinitions = [];
+let payrollItemDefinitionsAvailable = true;
+let payrollItemSelectorType = "";
+let selectedPayrollItemDefinitionId = "";
+let dynamicPayrollEditorItems = { adjustment: new Set(), deduction: new Set() };
 let employeeDashboardPayslipRow = null;
 let currentDeductionEmployeeId = "";
 let deductionsEditOpen = false;
 let editingEvent = null;
 let editingEmployeeId = null;
+let employeeSdlConfigurationOpen = false;
+let employeeSdlOriginalCircumstance = "standard";
 let editingSiteId = null;
 let editingSupervisorId = null;
 let currentSiteActionId = "";
@@ -331,6 +339,15 @@ const el = {
   companyEmployeeSbfMember: $("companyEmployeeSbfMember"),
   companyEmployeeSaewaMember: $("companyEmployeeSaewaMember"),
   companyEmployeeActive: $("companyEmployeeActive"),
+  employeeSdlFields: $("employeeSdlFields"),
+  employeeSdlTreatmentSummary: $("employeeSdlTreatmentSummary"),
+  employeeSdlConfiguration: $("employeeSdlConfiguration"),
+  employeeSdlEffectiveRow: $("employeeSdlEffectiveRow"),
+  employeeSdlEvidenceRow: $("employeeSdlEvidenceRow"),
+  btnChangeEmployeeSdl: $("btnChangeEmployeeSdl"),
+  companyEmployeeSdlCircumstance: $("companyEmployeeSdlCircumstance"),
+  companyEmployeeSdlEffectiveFrom: $("companyEmployeeSdlEffectiveFrom"),
+  companyEmployeeSdlEvidence: $("companyEmployeeSdlEvidence"),
   btnSaveEmployee: $("btnSaveEmployee"),
   companyEmployeeList: $("companyEmployeeList"),
   companySiteForm: $("companySiteForm"),
@@ -542,6 +559,12 @@ const el = {
   ruleLunchMinutes: $("ruleLunchMinutes"),
   ruleCalculateUif: $("ruleCalculateUif"),
   ruleCalculatePaye: $("ruleCalculatePaye"),
+  ruleCalculateSdl: $("ruleCalculateSdl"),
+  ruleSdlEffectiveFrom: $("ruleSdlEffectiveFrom"),
+  ruleSdlEffectiveConfig: $("ruleSdlEffectiveConfig"),
+  ruleSdlEffectiveSummary: $("ruleSdlEffectiveSummary"),
+  ruleSdlEffectiveHelp: $("ruleSdlEffectiveHelp"),
+  ruleSdlEffectiveError: $("ruleSdlEffectiveError"),
   workWeekTitle: $("workWeekTitle"),
   workWeekSubtitle: $("workWeekSubtitle"),
   workWeekSummary: $("workWeekSummary"),
@@ -623,6 +646,8 @@ const el = {
   adjustmentTotal: $("adjustmentTotal"),
   deductionTotal: $("deductionTotal"),
   deductionNetPay: $("deductionNetPay"),
+  deductionSdlBase: $("deductionSdlBase"),
+  deductionSdlAmount: $("deductionSdlAmount"),
   deductionList: $("deductionList"),
   deductionForm: $("deductionForm"),
   deductionType: $("deductionType"),
@@ -630,6 +655,12 @@ const el = {
   deductionAmount: $("deductionAmount"),
   btnEditDeductions: $("btnEditDeductions"),
   btnSaveDeduction: $("btnSaveDeduction"),
+  payrollItemSelectorModal: $("payrollItemSelectorModal"),
+  payrollItemSelectorTitle: $("payrollItemSelectorTitle"),
+  payrollItemSearch: $("payrollItemSearch"),
+  payrollItemResults: $("payrollItemResults"),
+  btnAddPayrollItem: $("btnAddPayrollItem"),
+  btnClosePayrollItemSelector: $("btnClosePayrollItemSelector"),
   payslipModal: $("payslipModal"),
   payslipModalSub: $("payslipModalSub"),
   payslipEmployeeSelect: $("payslipEmployeeSelect"),
@@ -1841,6 +1872,8 @@ const DEFAULT_PAYROLL_RULES = Object.freeze({
   public_holiday_standard_hours: 8,
   calculate_uif: false,
   calculate_paye: false,
+  calculate_sdl: false,
+  sdl_effective_from: null,
   work_week_enabled: false,
   work_week: DEFAULT_WORK_WEEK,
   daily_overtime_enabled: false,
@@ -1979,6 +2012,39 @@ function readWorkWeekTemplate() {
   return normaliseWorkWeek(week);
 }
 
+function payrollRuleDateLabel(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return "";
+  return new Intl.DateTimeFormat("en-ZA", { day: "2-digit", month: "short", year: "numeric" })
+    .format(new Date(`${value}T00:00:00`));
+}
+
+function updateSdlRuleUI(rules = companyPayrollRules) {
+  if (!el.ruleCalculateSdl || !el.ruleSdlEffectiveConfig) return;
+  const persisted = normalisePayrollRules(rules || {});
+  const desired = !!el.ruleCalculateSdl.checked;
+  const changing = desired !== !!persisted.calculate_sdl;
+  el.ruleSdlEffectiveConfig.hidden = !changing;
+  if (el.ruleSdlEffectiveSummary) {
+    const label = persisted.calculate_sdl ? payrollRuleDateLabel(persisted.sdl_effective_from) : "";
+    el.ruleSdlEffectiveSummary.textContent = label ? `Effective from ${label}` : "";
+    el.ruleSdlEffectiveSummary.hidden = changing || !label;
+  }
+  if (el.ruleSdlEffectiveHelp) {
+    el.ruleSdlEffectiveHelp.textContent = desired
+      ? "This determines when SDL calculation starts."
+      : "This determines when SDL calculation stops.";
+  }
+  if (!changing && el.ruleSdlEffectiveError) el.ruleSdlEffectiveError.textContent = "";
+}
+
+function handleSdlRuleToggle() {
+  const persisted = normalisePayrollRules(companyPayrollRules || {});
+  const changing = !!el.ruleCalculateSdl.checked !== !!persisted.calculate_sdl;
+  el.ruleSdlEffectiveFrom.value = changing ? "" : (persisted.sdl_effective_from || "");
+  if (el.ruleSdlEffectiveError) el.ruleSdlEffectiveError.textContent = "";
+  updateSdlRuleUI(persisted);
+}
+
 function renderPayrollRulesForm(rules) {
   if (!el.payrollRulesForm) return;
   const r = normalisePayrollRules(rules);
@@ -1994,10 +2060,14 @@ function renderPayrollRulesForm(rules) {
   el.ruleLunchMinutes.value = r.lunch_deduction_minutes;
   if (el.ruleCalculateUif) el.ruleCalculateUif.checked = !!r.calculate_uif;
   if (el.ruleCalculatePaye) el.ruleCalculatePaye.checked = !!r.calculate_paye;
+  if (el.ruleCalculateSdl) el.ruleCalculateSdl.checked = !!r.calculate_sdl;
+  if (el.ruleSdlEffectiveFrom) el.ruleSdlEffectiveFrom.value = r.sdl_effective_from || "";
+  updateSdlRuleUI(r);
   renderWorkWeekTemplate(r.work_week);
   if (el.payrollRulesSummary) {
     el.payrollRulesSummary.textContent = ruleLabel(r.overtime_method);
   }
+  if (typeof payrollReportsUpdateVisibility === "function") payrollReportsUpdateVisibility(r);
 }
 
 function setPayrollMethod(method) {
@@ -2364,6 +2434,59 @@ function visibleCustomDeductionTypes() {
   )));
 }
 
+function activePayrollItemDefinitions(itemType = "") {
+  return payrollItemDefinitions.filter((item) => (
+    item.active && (!itemType || item.item_type === itemType)
+  ));
+}
+
+function selectablePayrollItemDefinitions(itemType = "") {
+  return activePayrollItemDefinitions(itemType).filter((item) => item.selector_visible !== false);
+}
+
+function payrollItemDefinition(id, itemType = "") {
+  return activePayrollItemDefinitions(itemType).find((item) => String(item.id) === String(id)) || null;
+}
+
+function dynamicPayrollItemAmount(items, definitionId) {
+  return (items || [])
+    .filter((item) => item.active && String(item.payroll_item_definition_id || "") === String(definitionId))
+    .reduce((sum, item) => sum + moneyNumber(item.amount), 0);
+}
+
+function initialiseDynamicPayrollEditor(row) {
+  const employeeId = String(row?.employee_id || "");
+  dynamicPayrollEditorItems = {
+    adjustment: new Set(payrollAdjustments
+      .filter((item) => item.active && String(item.employee_id) === employeeId && item.payroll_item_definition_id)
+      .map((item) => String(item.payroll_item_definition_id))),
+    deduction: new Set(payrollDeductions
+      .filter((item) => item.active && String(item.employee_id) === employeeId && item.payroll_item_definition_id)
+      .map((item) => String(item.payroll_item_definition_id)))
+  };
+}
+
+function dynamicPayrollItemCards(itemType) {
+  const source = itemType === "adjustment" ? payrollAdjustments : payrollDeductions;
+  const attribute = itemType === "adjustment" ? "data-dynamic-adjustment-id" : "data-dynamic-deduction-id";
+  const employeeId = String(currentDeductionEmployeeId || "");
+  return Array.from(dynamicPayrollEditorItems[itemType] || [])
+    .map((id) => payrollItemDefinition(id, itemType))
+    .filter(Boolean)
+    .map((item) => {
+      const amount = dynamicPayrollItemAmount(source.filter((row) => String(row.employee_id) === employeeId), item.id);
+      return `
+        <div class="deductionEditRow dynamicPayrollItemCard">
+          <div class="dynamicPayrollItemTitle">
+            <b>${escapeHtml(item.display_name)}</b>
+            <button class="dynamicPayrollItemRemove" type="button" data-remove-payroll-item="${escapeHtml(itemType)}" data-payroll-item-id="${escapeHtml(item.id)}" title="Remove ${escapeHtml(item.display_name)}" aria-label="Remove ${escapeHtml(item.display_name)}"><i class="ph ph-x"></i></button>
+          </div>
+          <input class="platformInput" ${attribute}="${escapeHtml(item.id)}" inputmode="decimal" value="${amount ? escapeHtml(amount.toFixed(2)) : ""}" placeholder="0.00">
+        </div>
+      `;
+    }).join("");
+}
+
 function isTrElectricalCompany(...args) {
   return sharedPayrollEngine().isTrElectricalCompany(...args);
 }
@@ -2459,7 +2582,10 @@ function renderDeductionEditor(row) {
   const adjustments = row.adjustments || [];
   el.deductionList.innerHTML = `
     <div class="deductionGroup">
-      <div class="deductionGroupTitle">Adjustments</div>
+      <div class="deductionGroupHead">
+        <div class="deductionGroupTitle">Adjustments</div>
+        <button class="dynamicPayrollItemAdd" type="button" data-add-payroll-item="adjustment" title="Add adjustment" aria-label="Add adjustment"><i class="ph ph-plus"></i></button>
+      </div>
       <div class="deductionGroupGrid">
         ${STANDARD_ADJUSTMENT_FIELDS.map((field) => {
           const value = adjustmentAmountForField(adjustments, field);
@@ -2471,10 +2597,14 @@ function renderDeductionEditor(row) {
             </label>
           `;
         }).join("")}
+        ${dynamicPayrollItemCards("adjustment")}
       </div>
     </div>
     <div class="deductionGroup">
-      <div class="deductionGroupTitle">Deductions</div>
+      <div class="deductionGroupHead">
+        <div class="deductionGroupTitle">Deductions</div>
+        <button class="dynamicPayrollItemAdd" type="button" data-add-payroll-item="deduction" title="Add deduction" aria-label="Add deduction"><i class="ph ph-plus"></i></button>
+      </div>
       <div class="deductionGroupGrid">
         ${visibleStandardDeductionFields().map((field) => {
     const amount = deductionAmountForField(deductions, field);
@@ -2503,9 +2633,94 @@ function renderDeductionEditor(row) {
             </label>
           `;
         }).join("")}
+        ${dynamicPayrollItemCards("deduction")}
       </div>
     </div>
   `;
+}
+
+function payrollEditorDraftValues() {
+  const values = new Map();
+  el.deductionList.querySelectorAll("input[data-adjustment-field],input[data-deduction-field],input[data-custom-deduction-id],input[data-dynamic-adjustment-id],input[data-dynamic-deduction-id]").forEach((input) => {
+    const key = ["adjustmentField", "deductionField", "customDeductionId", "dynamicAdjustmentId", "dynamicDeductionId"]
+      .map((name) => input.dataset[name] ? `${name}:${input.dataset[name]}` : "")
+      .find(Boolean);
+    if (key) values.set(key, input.value);
+  });
+  return values;
+}
+
+function restorePayrollEditorDraftValues(values) {
+  el.deductionList.querySelectorAll("input[data-adjustment-field],input[data-deduction-field],input[data-custom-deduction-id],input[data-dynamic-adjustment-id],input[data-dynamic-deduction-id]").forEach((input) => {
+    const key = ["adjustmentField", "deductionField", "customDeductionId", "dynamicAdjustmentId", "dynamicDeductionId"]
+      .map((name) => input.dataset[name] ? `${name}:${input.dataset[name]}` : "")
+      .find(Boolean);
+    if (key && values.has(key)) input.value = values.get(key);
+  });
+}
+
+function availablePayrollItemDefinitions() {
+  const search = String(el.payrollItemSearch?.value || "").trim().toLowerCase();
+  const selected = dynamicPayrollEditorItems[payrollItemSelectorType] || new Set();
+  return selectablePayrollItemDefinitions(payrollItemSelectorType).filter((item) => (
+    !selected.has(String(item.id))
+    && (!search || String(item.display_name || "").toLowerCase().includes(search))
+  ));
+}
+
+function renderPayrollItemSelectorResults() {
+  const items = availablePayrollItemDefinitions();
+  if (!items.length) {
+    el.payrollItemResults.innerHTML = `<div class="payrollItemSelectorEmpty">No available ${escapeHtml(payrollItemSelectorType || "payroll")} items found.</div>`;
+    el.btnAddPayrollItem.disabled = true;
+    return;
+  }
+  el.payrollItemResults.innerHTML = items.map((item) => `
+    <button class="payrollItemResult${String(item.id) === selectedPayrollItemDefinitionId ? " isSelected" : ""}" type="button" data-select-payroll-item="${escapeHtml(item.id)}">
+      <span><b>${escapeHtml(item.display_name)}</b><small>Stored only; excluded from payroll calculations.</small></span><i class="ph ph-check"></i>
+    </button>
+  `).join("");
+  el.btnAddPayrollItem.disabled = !items.some((item) => String(item.id) === selectedPayrollItemDefinitionId);
+}
+
+function openPayrollItemSelector(itemType) {
+  if (!payrollItemDefinitionsAvailable) return alert("Dynamic payroll items are not available yet. Apply the payroll item database migrations first.");
+  if (!selectablePayrollItemDefinitions(itemType).length) return alert(`No ${itemType} items are available.`);
+  payrollItemSelectorType = itemType;
+  selectedPayrollItemDefinitionId = "";
+  el.payrollItemSelectorTitle.textContent = itemType === "adjustment" ? "Add Adjustment" : "Add Deduction";
+  el.btnAddPayrollItem.textContent = itemType === "adjustment" ? "Add Adjustment" : "Add Deduction";
+  el.payrollItemSearch.placeholder = itemType === "adjustment" ? "Search adjustment or allowance..." : "Search deduction...";
+  el.payrollItemSearch.value = "";
+  renderPayrollItemSelectorResults();
+  el.payrollItemSelectorModal.classList.add("show");
+  el.payrollItemSelectorModal.setAttribute("aria-hidden", "false");
+  el.payrollItemSearch.focus();
+}
+
+function closePayrollItemSelector() {
+  payrollItemSelectorType = "";
+  selectedPayrollItemDefinitionId = "";
+  el.payrollItemSelectorModal.classList.remove("show");
+  el.payrollItemSelectorModal.setAttribute("aria-hidden", "true");
+}
+
+function addSelectedPayrollItem() {
+  const item = payrollItemDefinition(selectedPayrollItemDefinitionId, payrollItemSelectorType);
+  if (!item || dynamicPayrollEditorItems[payrollItemSelectorType].has(String(item.id))) return;
+  const draft = payrollEditorDraftValues();
+  dynamicPayrollEditorItems[payrollItemSelectorType].add(String(item.id));
+  renderDeductionEditor(selectedDeductionRow());
+  restorePayrollEditorDraftValues(draft);
+  closePayrollItemSelector();
+}
+
+function removeDynamicPayrollItem(itemType, itemId) {
+  if (!dynamicPayrollEditorItems[itemType]?.has(String(itemId))) return;
+  const draft = payrollEditorDraftValues();
+  dynamicPayrollEditorItems[itemType].delete(String(itemId));
+  renderDeductionEditor(selectedDeductionRow());
+  restorePayrollEditorDraftValues(draft);
 }
 
 function setDeductionEditorOpen(open) {
@@ -2535,6 +2750,8 @@ function openPayrollDeductions(employeeId) {
   if (el.adjustmentTotal) el.adjustmentTotal.textContent = formatMoney(totalAdjustments);
   el.deductionTotal.textContent = formatMoney(totalDeductions);
   el.deductionNetPay.textContent = formatMoney(net);
+  if (el.deductionSdlBase) el.deductionSdlBase.textContent = formatMoney(row.sdl_leviable_remuneration || 0);
+  if (el.deductionSdlAmount) el.deductionSdlAmount.textContent = formatMoney(row.sdl_amount || 0);
   el.deductionDescription.value = "";
   el.deductionAmount.value = "";
 
@@ -2549,6 +2766,7 @@ function openPayrollDeductions(employeeId) {
     el.btnEditDeductions.disabled = true;
   } else {
     el.btnEditDeductions.disabled = false;
+    initialiseDynamicPayrollEditor(row);
     renderDeductionEditor(row);
     setDeductionEditorOpen(false);
   }
@@ -2558,6 +2776,7 @@ function openPayrollDeductions(employeeId) {
 }
 
 function closePayrollDeductions() {
+  closePayrollItemSelector();
   currentDeductionEmployeeId = "";
   setDeductionEditorOpen(false);
   el.payrollDeductionsModal.classList.remove("show");
@@ -2651,6 +2870,27 @@ async function savePayrollDeductions() {
     })
     .filter(Boolean);
   deductionEntries.push(...customDeductionEntries);
+  const dynamicDeductionEntries = Array.from(el.deductionList.querySelectorAll("[data-dynamic-deduction-id]"))
+    .map((input) => {
+      const amount = moneyNumber(input.value);
+      const item = payrollItemDefinition(input.getAttribute("data-dynamic-deduction-id"), "deduction");
+      return item && amount > 0 ? {
+        company_id: company.id,
+        company_name: company.name,
+        employee_id: row.employee_id,
+        employee_name: row.employee_name || "",
+        deduction_type_id: null,
+        payroll_item_definition_id: item.id,
+        description: item.display_name,
+        amount,
+        period_start: start,
+        period_end: end,
+        created_by: currentUser?.id || null,
+        active: true
+      } : null;
+    })
+    .filter(Boolean);
+  deductionEntries.push(...dynamicDeductionEntries);
   const rules = activePayrollRules();
   const adjustmentEntries = Array.from(el.deductionList.querySelectorAll("[data-adjustment-field]"))
     .map((input) => {
@@ -2681,6 +2921,28 @@ async function savePayrollDeductions() {
       };
     })
     .filter(Boolean);
+  const dynamicAdjustmentEntries = Array.from(el.deductionList.querySelectorAll("[data-dynamic-adjustment-id]"))
+    .map((input) => {
+      const amount = moneyNumber(input.value);
+      const item = payrollItemDefinition(input.getAttribute("data-dynamic-adjustment-id"), "adjustment");
+      return item && amount > 0 ? {
+        company_id: company.id,
+        company_name: company.name,
+        employee_id: row.employee_id,
+        employee_name: row.employee_name || "",
+        payroll_item_definition_id: item.id,
+        adjustment_type: "dynamic",
+        description: item.display_name,
+        hours: 0,
+        amount,
+        period_start: start,
+        period_end: end,
+        created_by: currentUser?.id || null,
+        active: true
+      } : null;
+    })
+    .filter(Boolean);
+  adjustmentEntries.push(...dynamicAdjustmentEntries);
 
   el.btnSaveDeduction.disabled = true;
   el.btnSaveDeduction.textContent = "Saving...";
@@ -2841,6 +3103,21 @@ async function fetchCompanyDeductionTypes(company) {
   return (data || []).map(normaliseDeductionType);
 }
 
+async function fetchPayrollItemDefinitions() {
+  const { data, error } = await sb
+    .from(PAYROLL_ITEM_DEFINITIONS_TABLE)
+    .select("id,item_key,display_name,item_type,classification_status,selector_visible,active")
+    .eq("active", true)
+    .order("display_name", { ascending: true });
+  if (error) {
+    payrollItemDefinitionsAvailable = false;
+    console.warn("Dynamic payroll item definitions not available yet:", error.message);
+    return [];
+  }
+  payrollItemDefinitionsAvailable = true;
+  return data || [];
+}
+
 async function fetchPayrollLevyPeriod(company, start, end) {
   if (!isTrElectricalCompany(company) || !start || !end) return null;
   const { data, error } = await sb
@@ -2975,7 +3252,7 @@ async function fetchPayrollDeductions(company, start, end, employeeId = "") {
   if (!company || !start || !end) return [];
   let query = sb
     .from(PAYROLL_DEDUCTIONS_TABLE)
-    .select("id,company_id,employee_id,employee_name,deduction_type_id,description,amount,period_start,period_end,active")
+    .select("id,company_id,employee_id,employee_name,deduction_type_id,payroll_item_definition_id,payroll_item_classification_id,description,amount,period_start,period_end,active")
     .eq(COMPANY_ID_COL, company.id)
     .eq("period_start", start)
     .eq("period_end", end)
@@ -2999,7 +3276,7 @@ async function fetchPayrollAdjustments(company, start, end, employeeId = "") {
   if (!company || !start || !end) return [];
   let query = sb
     .from(PAYROLL_ADJUSTMENTS_TABLE)
-    .select("id,company_id,employee_id,employee_name,adjustment_type,description,hours,amount,period_start,period_end,active")
+    .select("id,company_id,employee_id,employee_name,adjustment_type,payroll_item_definition_id,payroll_item_classification_id,description,hours,amount,period_start,period_end,active")
     .eq(COMPANY_ID_COL, company.id)
     .eq("period_start", start)
     .eq("period_end", end)
@@ -3461,6 +3738,7 @@ async function runPayrollReport(silent = false) {
     const [
       { data, error },
       loadedDeductionTypes,
+      loadedPayrollItemDefinitions,
       loadedDeductions,
       loadedAdjustments,
       loadedLevyPeriod,
@@ -3473,6 +3751,7 @@ async function runPayrollReport(silent = false) {
         .lte("created_at", dateEndIso(end))
         .order("created_at", { ascending: true }),
       fetchCompanyDeductionTypes(company),
+      fetchPayrollItemDefinitions(),
       fetchPayrollDeductions(company, start, end),
       fetchPayrollAdjustments(company, start, end),
       isTrElectricalCompany(company)
@@ -3486,6 +3765,7 @@ async function runPayrollReport(silent = false) {
     if (summaryVersion !== payrollSummaryRunVersion || contextVersion !== jobsContextVersion ||
         company.id !== currentCompany()?.id || start !== el.payrollStartDate.value || end !== el.payrollEndDate.value) return;
     companyDeductionTypes = loadedDeductionTypes;
+    payrollItemDefinitions = loadedPayrollItemDefinitions;
     payrollDeductions = loadedDeductions;
     payrollAdjustments = loadedAdjustments;
     if (el.payrollLevyWeeks && isTrElectricalCompany(company)) {
@@ -3744,10 +4024,33 @@ function updateEmployeeRatePlaceholder() {
   }
 }
 
+function updateEmployeeSdlTreatmentUI() {
+  if (!el.employeeSdlFields) return;
+  const circumstance = el.companyEmployeeSdlCircumstance?.value || "standard";
+  const isLearner = circumstance === "section_18_3_learner";
+  const wasLearner = employeeSdlOriginalCircumstance === "section_18_3_learner";
+  if (el.employeeSdlTreatmentSummary) {
+    el.employeeSdlTreatmentSummary.textContent = isLearner ? "Section 18(3) learner" : "Standard employee";
+  }
+  if (el.employeeSdlConfiguration) el.employeeSdlConfiguration.hidden = !employeeSdlConfigurationOpen;
+  if (el.employeeSdlEffectiveRow) el.employeeSdlEffectiveRow.hidden = !employeeSdlConfigurationOpen || (!isLearner && !wasLearner);
+  if (el.employeeSdlEvidenceRow) el.employeeSdlEvidenceRow.hidden = !employeeSdlConfigurationOpen || !isLearner;
+  if (el.btnChangeEmployeeSdl) el.btnChangeEmployeeSdl.textContent = employeeSdlConfigurationOpen ? "Done" : "Change";
+}
+
+function setEmployeeSdlTreatmentState(circumstance = "standard") {
+  employeeSdlOriginalCircumstance = circumstance === "section_18_3_learner" ? circumstance : "standard";
+  employeeSdlConfigurationOpen = false;
+  if (el.companyEmployeeSdlCircumstance) el.companyEmployeeSdlCircumstance.value = employeeSdlOriginalCircumstance;
+  updateEmployeeSdlTreatmentUI();
+}
+
 function showEmployeeForm(show) {
   const on = !!show;
   renderTrElectricalPayrollControls();
   el.employeeFormBox.hidden = !on;
+  if (el.employeeSdlFields) el.employeeSdlFields.hidden = !on || !activePayrollRules().calculate_sdl;
+  if (on) updateEmployeeSdlTreatmentUI();
   if (typeof payrollHistoryEmployeeForm === "function") payrollHistoryEmployeeForm(on);
   setToggleButton(el.btnToggleEmployeeForm, on, "Add employee", "Close add employee");
   if (!on) {
@@ -3765,6 +4068,10 @@ function showEmployeeForm(show) {
     el.companyEmployeeSbfMember.value = "";
     el.companyEmployeeSaewaMember.value = "";
     el.companyEmployeeActive.value = "true";
+    if (el.companyEmployeeSdlCircumstance) el.companyEmployeeSdlCircumstance.value = "standard";
+    if (el.companyEmployeeSdlEffectiveFrom) el.companyEmployeeSdlEffectiveFrom.value = localDateInputValue(new Date());
+    if (el.companyEmployeeSdlEvidence) el.companyEmployeeSdlEvidence.value = "";
+    setEmployeeSdlTreatmentState("standard");
     el.btnSaveEmployee.textContent = "Save Employee";
   }
 }
@@ -4150,7 +4457,7 @@ async function loadTeamStatus(company) {
 async function fetchCompanyPayrollRules(company) {
   if (!company) return normalisePayrollRules();
   const legacySelect = "overtime_method,weekly_normal_hours,fortnightly_normal_hours,monthly_normal_hours,ot1_multiplier,ot2_multiplier,saturday_rule,sunday_rule,public_holiday_rule,public_holiday_standard_hours,work_week_enabled,work_week,daily_overtime_enabled,daily_normal_hours,lunch_deduction_enabled,lunch_deduction_minutes";
-  const baseSelect = `${legacySelect},calculate_uif,calculate_paye`;
+  const baseSelect = `${legacySelect},calculate_uif,calculate_paye,calculate_sdl,sdl_effective_from`;
   const profileSelect = `${baseSelect},payroll_profile,paid_start_time,normal_end_time,overtime_trigger_time,friday_normal_end_time,friday_overtime_trigger_time`;
   const { data, error } = await sb
     .from(COMPANY_PAYROLL_RULES_TABLE)
@@ -4179,6 +4486,12 @@ async function saveCompanyPayrollRules() {
   if (!company) return alert("Select a company first.");
 
   const previousRules = normalisePayrollRules(companyPayrollRules || {});
+  if (!!el.ruleCalculateSdl?.checked !== !!previousRules.calculate_sdl && !el.ruleSdlEffectiveFrom?.value) {
+    if (el.ruleSdlEffectiveError) el.ruleSdlEffectiveError.textContent = "Choose an effective date before saving.";
+    el.ruleSdlEffectiveFrom?.focus();
+    return;
+  }
+  if (el.ruleSdlEffectiveError) el.ruleSdlEffectiveError.textContent = "";
   const workWeek = readWorkWeekTemplate();
   const rules = normalisePayrollRules({
     overtime_method: el.ruleOvertimeMethod.value,
@@ -4195,6 +4508,8 @@ async function saveCompanyPayrollRules() {
     public_holiday_standard_hours: payrollRuleNumber(el.ruleHolidayHours.value, DEFAULT_PAYROLL_RULES.public_holiday_standard_hours),
     calculate_uif: !!el.ruleCalculateUif?.checked,
     calculate_paye: !!el.ruleCalculatePaye?.checked,
+    calculate_sdl: !!el.ruleCalculateSdl?.checked,
+    sdl_effective_from: el.ruleSdlEffectiveFrom?.value || null,
     daily_overtime_enabled: el.ruleOvertimeMethod.value === "daily_cycle",
     daily_normal_hours: workWeek.mon.normal_hours,
     lunch_deduction_enabled: Number(el.ruleLunchMinutes.value || 0) > 0,
@@ -6606,6 +6921,10 @@ function beginEditEmployee(employeeId) {
   el.companyEmployeeSbfMember.value = employee.sbf_member === true ? "true" : "false";
   el.companyEmployeeSaewaMember.value = employee.saewa_member === true ? "true" : "false";
   el.companyEmployeeActive.value = employee.active === false ? "false" : "true";
+  if (el.companyEmployeeSdlCircumstance) el.companyEmployeeSdlCircumstance.value = "standard";
+  if (el.companyEmployeeSdlEffectiveFrom) el.companyEmployeeSdlEffectiveFrom.value = employee.employment_date || localDateInputValue(new Date());
+  if (el.companyEmployeeSdlEvidence) el.companyEmployeeSdlEvidence.value = "";
+  setEmployeeSdlTreatmentState("standard");
   el.btnSaveEmployee.textContent = "Update Employee";
   showEmployeeForm(true);
   el.companyEmployeeName.focus();
@@ -7086,6 +7405,13 @@ async function saveCompanyEmployee() {
   const rateValue = el.companyEmployeeRate.value.trim();
   const employmentDate = el.companyEmployeeEmploymentDate.value || localDateInputValue(new Date());
   const active = el.companyEmployeeActive.value !== "false";
+  const sdlCircumstance = el.companyEmployeeSdlCircumstance?.value || "standard";
+  const sdlEvidence = el.companyEmployeeSdlEvidence?.value.trim() || "";
+  const sdlEffectiveFrom = el.companyEmployeeSdlEffectiveFrom?.value || "";
+  if (activePayrollRules().calculate_sdl &&
+      (sdlCircumstance === "section_18_3_learner" || employeeSdlOriginalCircumstance === "section_18_3_learner") &&
+      !sdlEffectiveFrom) return alert("Choose when this SDL treatment takes effect.");
+  if (activePayrollRules().calculate_sdl && sdlCircumstance === "section_18_3_learner" && !sdlEvidence) return alert("Enter the section 18(3) learner evidence reference.");
   if (!employeeId) return alert("Enter an employee ID.");
   if (!fullName) return alert("Enter the employee full name.");
   if (!["hourly", "daily", "monthly"].includes(payType)) return alert("Choose a valid pay type.");
@@ -7129,7 +7455,10 @@ async function saveCompanyEmployee() {
         saewa_member: nbceiDesignationCode !== "none" && saewaMemberValue === "true"
       } : {}),
       rate,
-      active
+      active,
+      sdl_circumstance: sdlCircumstance,
+      sdl_circumstance_effective_from: sdlEffectiveFrom || employmentDate,
+      sdl_evidence_reference: sdlEvidence || null
     };
     const query = typeof payrollHistoryEnabled === "function" && payrollHistoryEnabled()
       ? payrollHistorySaveEmployee(payload, isEditing)
@@ -7954,6 +8283,15 @@ el.payrollRulesForm.addEventListener("click", (event) => {
   }
 });
 el.ruleOvertimeMethod.addEventListener("change", () => setPayrollMethod(el.ruleOvertimeMethod.value));
+el.ruleCalculateSdl?.addEventListener("change", handleSdlRuleToggle);
+el.ruleSdlEffectiveFrom?.addEventListener("input", () => {
+  if (el.ruleSdlEffectiveError) el.ruleSdlEffectiveError.textContent = "";
+});
+el.btnChangeEmployeeSdl?.addEventListener("click", () => {
+  employeeSdlConfigurationOpen = !employeeSdlConfigurationOpen;
+  updateEmployeeSdlTreatmentUI();
+});
+el.companyEmployeeSdlCircumstance?.addEventListener("change", updateEmployeeSdlTreatmentUI);
 el.btnToggleWorkWeekEditor.addEventListener("click", () => {
   const isOpen = el.workWeekEditor.hidden;
   el.workWeekEditor.hidden = !isOpen;
@@ -8339,6 +8677,27 @@ el.timesheetModal.addEventListener("click", (e) => {
 });
 el.payrollDeductionsModal.addEventListener("click", (e) => {
   if (e.target === el.payrollDeductionsModal) closePayrollDeductions();
+});
+el.deductionList.addEventListener("click", (e) => {
+  const add = e.target.closest("[data-add-payroll-item]");
+  if (add) return openPayrollItemSelector(add.getAttribute("data-add-payroll-item"));
+  const remove = e.target.closest("[data-remove-payroll-item]");
+  if (remove) removeDynamicPayrollItem(remove.getAttribute("data-remove-payroll-item"), remove.getAttribute("data-payroll-item-id"));
+});
+el.payrollItemResults.addEventListener("click", (e) => {
+  const option = e.target.closest("[data-select-payroll-item]");
+  if (!option) return;
+  selectedPayrollItemDefinitionId = option.getAttribute("data-select-payroll-item") || "";
+  renderPayrollItemSelectorResults();
+});
+el.payrollItemSearch.addEventListener("input", () => {
+  selectedPayrollItemDefinitionId = "";
+  renderPayrollItemSelectorResults();
+});
+el.btnAddPayrollItem.addEventListener("click", addSelectedPayrollItem);
+el.btnClosePayrollItemSelector.addEventListener("click", closePayrollItemSelector);
+el.payrollItemSelectorModal.addEventListener("click", (e) => {
+  if (e.target === el.payrollItemSelectorModal) closePayrollItemSelector();
 });
 el.btnEditDeductions.addEventListener("click", toggleDeductionEditor);
 el.deductionForm.addEventListener("submit", (e) => {

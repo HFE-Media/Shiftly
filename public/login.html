@@ -870,7 +870,7 @@ body{
 }
 .statutoryToggleGrid{
   display:grid;
-  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-columns:repeat(3,minmax(0,1fr));
   gap:10px;
   margin-top:10px;
 }
@@ -927,6 +927,22 @@ body{
   left:19px;
   background:#111;
 }
+.sdlEffectiveSummary{font-size:9px!important;color:#d8c98f!important;}
+.sdlEffectiveConfig{
+  grid-column:1 / -1;
+  display:grid;
+  grid-template-columns:minmax(160px,220px) minmax(0,1fr);
+  align-items:end;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid rgba(221,174,37,.24);
+  border-radius:8px;
+  background:rgba(212,175,55,.045);
+}
+.sdlEffectiveConfig[hidden]{display:none!important;}
+.sdlEffectiveConfig .payrollRuleField{min-width:0;}
+.sdlEffectiveConfig .mutedText{font-size:10px;line-height:1.45;margin:0;}
+.sdlEffectiveError{color:#f0b8a7!important;min-height:15px;}
 .workWeekBlock{
   border:1px solid rgba(212,175,55,0.22);
   background:linear-gradient(180deg,rgba(255,193,28,0.055),rgba(0,0,0,0.12));
@@ -1122,6 +1138,12 @@ body{
   display:grid;
   gap:8px;
 }
+.deductionGroupHead{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
 .deductionGroupTitle{
   color:var(--muted);
   font-size:10px;
@@ -1129,6 +1151,39 @@ body{
   text-transform:uppercase;
   font-weight:950;
 }
+.dynamicPayrollItemAdd,.dynamicPayrollItemRemove{
+  border:1px solid rgba(212,175,55,0.32);
+  background:rgba(212,175,55,0.08);
+  color:var(--txt);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+}
+.dynamicPayrollItemAdd{width:25px;height:25px;border-radius:7px;}
+.dynamicPayrollItemRemove{width:22px;height:22px;border-radius:6px;flex:0 0 auto;}
+.dynamicPayrollItemTitle{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.payrollItemSelectorForm{display:grid;gap:12px;margin-top:14px;}
+.payrollItemResults{display:grid;gap:7px;max-height:260px;overflow:auto;}
+.payrollItemResult{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  border:1px solid rgba(212,175,55,0.15);
+  border-radius:8px;
+  padding:9px 11px;
+  background:rgba(255,255,255,0.025);
+  color:var(--txt);
+  text-align:left;
+  cursor:pointer;
+}
+.payrollItemResult i{opacity:0;}
+.payrollItemResult span{display:grid;gap:3px;}
+.payrollItemResult small{color:var(--muted);font-size:10px;font-weight:500;}
+.payrollItemResult.isSelected{border-color:var(--gold);background:rgba(212,175,55,0.1);}
+.payrollItemResult.isSelected i{opacity:1;color:var(--gold);}
+.payrollItemSelectorEmpty{color:var(--muted);font-size:12px;padding:14px 2px;}
 .deductionGroupGrid{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
@@ -1889,12 +1944,14 @@ body{
   .payrollMethodCard{min-height:36px; padding:8px 7px; border-radius:11px;}
   .payrollMethodCard b{font-size:10.5px;}
   .statutoryToggleGrid{grid-template-columns:1fr 1fr; gap:8px;}
+  .statutoryToggleGrid .sdlStatutoryToggle{grid-column:1 / -1;}
   .statutoryToggle{min-height:48px; padding:8px 9px; gap:8px;}
   .statutoryToggle b{font-size:9px;}
   .statutoryToggle span{font-size:9px;}
   .statutoryToggle input{width:38px; height:22px;}
   .statutoryToggle input::after{width:16px; height:16px;}
   .statutoryToggle input:checked::after{left:18px;}
+  .sdlEffectiveConfig{grid-template-columns:1fr;padding:9px;}
   .payrollRulesGrid.two{grid-template-columns:1fr;}
   .workWeekHead{grid-template-columns:1fr auto; align-items:start;}
   .workWeekMeta{min-width:0;}
@@ -2741,12 +2798,28 @@ select{
 .employeeYtdSection [hidden]{display:none!important;}
 .employeeYtdSection .platformInput{display:block;width:100%;min-width:0;box-sizing:border-box;margin-top:5px;font-variant-numeric:tabular-nums;}
 .employeeYtdSection .mutedText{font-size:10px;line-height:1.5;margin-top:10px;overflow-wrap:anywhere;}
+.employeeSdlTreatment{margin-top:12px;padding:10px 12px;border:1px solid rgba(212,175,55,.25);border-radius:10px;background:#141411;}
+.employeeSdlTreatment[hidden],.employeeSdlConfiguration[hidden],.employeeSdlConfiguration [hidden]{display:none!important;}
+.employeeSdlTreatmentRow{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.employeeSdlTreatmentCopy{display:grid;gap:3px;min-width:0;}
+.employeeSdlTreatmentCopy strong{font-size:10px;letter-spacing:.08em;color:#d4af37;}
+.employeeSdlTreatmentCopy span{font-size:11px;color:#eee9dc;}
+.employeeSdlChange{width:auto!important;min-height:32px;padding:6px 12px!important;flex:0 0 auto;}
+.employeeSdlConfiguration{display:grid;gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(212,175,55,.14);}
+.employeeSdlConfiguration label{display:block;font-size:11px;color:#ccc7bb;}
+.employeeSdlConfiguration .platformInput,.employeeSdlConfiguration .platformSelect{display:block;width:100%;margin-top:5px;}
 #payrollFinalStatus{font-size:11px;line-height:1.3;}
 #btnFinalisePayroll{color:#d4af37;}
 #btnFinalisePayroll svg{width:18px;height:18px;display:block;color:var(--gold);}
 #btnFinalisePayroll:not(:disabled):hover{background:rgba(212,175,55,.12);border-color:#d4af37;}
 #btnFinalisePayroll:focus-visible{outline:2px solid #d4af37;outline-offset:3px;}
 #btnFinalisePayroll.isFinalised{opacity:1;color:#f0cd58;background:rgba(255,255,255,.035);border-color:rgba(212,175,55,.28);}
+#btnPayrollReports{color:#d4af37;}
+.payrollReportsForm{display:grid;gap:14px;margin-top:16px;}
+.payrollReportsField{display:grid;gap:7px;}
+.payrollReportsField>span{font-size:10px;font-weight:900;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;}
+.payrollReportsPeriodMeta{min-height:17px;color:var(--muted);font-size:11px;}
+.payrollReportsEmpty{padding:18px;border:1px solid rgba(212,175,55,.16);border-radius:14px;background:rgba(255,255,255,.025);line-height:1.55;}
 </style>
 </head>
 
@@ -3050,6 +3123,9 @@ select{
           <div class="platformActions">
           <span id="payrollFinalStatus" class="mutedText" role="status">Not Finalised</span>
           <button id="btnFinalisePayroll" class="miniIconBtn" type="button" title="Finalise Payroll" aria-label="Finalise Payroll" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m20 6-11 11-5-5" /></svg></button>
+          <button id="btnPayrollReports" class="miniIconBtn" type="button" title="Payroll Reports" aria-label="Payroll Reports" hidden>
+            <i class="ph ph-file-text"></i>
+          </button>
           <button id="btnExportPayroll" class="miniIconBtn" type="button" title="Generate payslip" aria-label="Generate payslip">
             <i class="ph ph-file-pdf"></i>
           </button>
@@ -3175,6 +3251,14 @@ select{
                     <span><b>Calculate PAYE</b><span>Tax estimate from gross pay</span></span>
                     <input id="ruleCalculatePaye" type="checkbox"/>
                   </label>
+                  <label class="statutoryToggle sdlStatutoryToggle" for="ruleCalculateSdl">
+                    <span><b>Calculate SDL</b><span>Employer levy at the authoritative rate</span><span id="ruleSdlEffectiveSummary" class="sdlEffectiveSummary" hidden></span></span>
+                    <input id="ruleCalculateSdl" type="checkbox"/>
+                  </label>
+                  <div id="ruleSdlEffectiveConfig" class="sdlEffectiveConfig" hidden>
+                    <div class="payrollRuleField"><label for="ruleSdlEffectiveFrom">Effective from</label><input id="ruleSdlEffectiveFrom" class="platformInput" type="date"/></div>
+                    <div><p id="ruleSdlEffectiveHelp" class="mutedText">This determines when the SDL configuration starts.</p><p id="ruleSdlEffectiveError" class="mutedText sdlEffectiveError" role="alert"></p></div>
+                  </div>
                 </div>
               </div>
               <button id="btnSavePayrollRules" class="platformBtn" type="submit">Save Payroll Rules</button>
@@ -3263,11 +3347,20 @@ select{
                   <option value="true">Active</option>
                   <option value="false">Inactive</option>
                 </select>
+                <div id="employeeSdlFields" class="employeeSdlTreatment" hidden>
+                  <div class="employeeSdlTreatmentRow"><div class="employeeSdlTreatmentCopy"><strong>SDL TREATMENT</strong><span id="employeeSdlTreatmentSummary">Standard employee</span></div><button id="btnChangeEmployeeSdl" class="btnGhost employeeSdlChange" type="button">Change</button></div>
+                  <div id="employeeSdlConfiguration" class="employeeSdlConfiguration" hidden>
+                    <label>Employee circumstance<select id="companyEmployeeSdlCircumstance" class="platformSelect"><option value="standard">Standard employee</option><option value="section_18_3_learner">Section 18(3) learner</option></select></label>
+                    <label id="employeeSdlEffectiveRow" hidden>Effective from<input id="companyEmployeeSdlEffectiveFrom" class="platformInput" type="date" /></label>
+                    <label id="employeeSdlEvidenceRow" hidden>Evidence reference<input id="companyEmployeeSdlEvidence" class="platformInput" placeholder="Required for a section 18(3) learner" /></label>
+                  </div>
+                </div>
                 <div id="employeeYtdFields" class="employeeYtdSection" hidden>
                   <div class="employeeYtdHeading"><strong>YEAR-TO-DATE PAYROLL</strong><span id="employeeYtdYear"></span></div>
                   <label for="employeeYtdAsAt">YTD as at<input id="employeeYtdAsAt" class="platformInput" type="date" /></label>
                   <label id="employeeYtdPayeLabel" hidden>YTD PAYE<input id="employeeYtdPaye" class="platformInput" inputmode="decimal" value="0.00" autocomplete="off" /></label>
                   <label id="employeeYtdUifLabel" hidden>YTD UIF<input id="employeeYtdUif" class="platformInput" inputmode="decimal" value="0.00" autocomplete="off" /></label>
+                  <label id="employeeYtdSdlLabel" hidden>YTD SDL<input id="employeeYtdSdl" class="platformInput" inputmode="decimal" value="0.00" autocomplete="off" /></label>
                   <label for="employeeYtdReason">Correction reason (optional)<input id="employeeYtdReason" class="platformInput" placeholder="e.g. Accountant adjustment" /></label>
                   <div id="employeeYtdMessage" class="mutedText" role="status"></div>
                 </div>
@@ -3544,6 +3637,8 @@ select{
         <div class="deductionStat"><b id="adjustmentTotal">R0.00</b><span>Adjustments</span></div>
         <div class="deductionStat"><b id="deductionTotal">R0.00</b><span>Deductions</span></div>
         <div class="deductionStat"><b id="deductionNetPay">R0.00</b><span>Net Pay</span></div>
+        <div class="deductionStat"><b id="deductionSdlBase">R0.00</b><span>SDL Leviable</span></div>
+        <div class="deductionStat"><b id="deductionSdlAmount">R0.00</b><span>Employer SDL</span></div>
       </div>
       <div id="deductionList" class="deductionList"></div>
       <form id="deductionForm" class="deductionForm">
@@ -3555,16 +3650,43 @@ select{
     </div>
   </div>
 
+  <div class="modal sheetModal" id="payrollItemSelectorModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="payrollItemSelectorTitle">
+    <div class="modalCard modalSheet">
+      <button id="btnClosePayrollItemSelector" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="modalTitle" id="payrollItemSelectorTitle">Add Adjustment</div>
+      <div class="payrollItemSelectorForm">
+        <input id="payrollItemSearch" class="platformInput" type="search" placeholder="Search adjustment or allowance..." autocomplete="off" aria-label="Search payroll items">
+        <div id="payrollItemResults" class="payrollItemResults"></div>
+        <button id="btnAddPayrollItem" class="platformBtn" type="button" disabled>Add Adjustment</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal sheetModal" id="payrollFinaliseModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="payrollFinaliseTitle">
     <div class="modalCard modalSheet">
       <div class="modalTitle" id="payrollFinaliseTitle">Finalise Payroll</div>
       <div id="payrollFinaliseDetails" class="modalSub"></div>
-      <p class="mutedText">This creates the official payroll record for all employees shown. Applicable PAYE and employee UIF contribute to their YTD once. Generating payslips does not finalise payroll.</p>
+      <p class="mutedText">This creates the official payroll record for all employees shown. Applicable PAYE, employee UIF and employer SDL contribute to YTD once. Generating payslips does not finalise payroll.</p>
       <div id="payrollFinaliseError" class="mutedText" role="alert"></div>
       <div class="modalActions">
         <button id="btnCancelPayrollFinalise" class="btnGhost" type="button">Cancel</button>
         <button id="btnConfirmPayrollFinalise" class="platformBtn" type="button">Finalise Payroll</button>
       </div>
+    </div>
+  </div>
+  <div class="modal sheetModal" id="payrollReportsModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="payrollReportsTitle">
+    <div class="modalCard modalSheet">
+      <button id="btnClosePayrollReports" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
+      <div class="modalTitle" id="payrollReportsTitle">Payroll Reports</div>
+      <div id="payrollReportsLoading" class="modalSub">Select a finalised payroll period and report.</div>
+      <div id="payrollReportsEmpty" class="payrollReportsEmpty" hidden>No payroll reports available.<br>Reports become available after a payroll period is finalised.</div>
+      <div id="payrollReportsForm" class="payrollReportsForm">
+        <label class="payrollReportsField"><span>Payroll Period</span><select id="payrollReportsPeriod" class="platformSelect" aria-label="Payroll Period"></select></label>
+        <div id="payrollReportsPeriodMeta" class="payrollReportsPeriodMeta"></div>
+        <label class="payrollReportsField"><span>Report</span><select id="payrollReportsType" class="platformSelect" aria-label="Report"></select></label>
+        <button id="btnGeneratePayrollReport" class="platformBtn" type="button">Generate Report</button>
+      </div>
+      <div id="payrollReportsError" class="mutedText" role="alert"></div>
     </div>
   </div>
   <div class="modal sheetModal" id="payslipModal" aria-hidden="true">
@@ -4239,10 +4361,11 @@ select{
 </main>
 
 <script src="./config.js"></script>
-  <script defer src="./payroll-history.js?v=2"></script>
-  <script defer src="./payroll-engine.js?v=1"></script>
-  <script defer src="./app.js?v=199"></script>
-  <script defer src="./payroll-history-ui.js?v=5"></script>
+  <script defer src="./payroll-history.js?v=3"></script>
+  <script defer src="./payroll-engine.js?v=2"></script>
+  <script defer src="./app.js?v=204"></script>
+  <script defer src="./payroll-reports.js?v=2"></script>
+  <script defer src="./payroll-history-ui.js?v=9"></script>
   <script>window.SHIFTLY_JOBS_PHOTO_ENDPOINT = 'https://shiftly-jobs-photos.shiftly-static-app.workers.dev/photos';</script>
   <script defer src="./jobs-data.js?v=6"></script>
   <script defer src="./jobs.js?v=27"></script>

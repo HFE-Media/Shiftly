@@ -143,6 +143,9 @@ test('UI draft, finalisation and read-only reprint contract',async()=>{
   const c={document,window:{ShiftlyPayrollHistory:ph,location:{hostname:'127.0.0.1',href:'http://127.0.0.1:5198/login'},addEventListener(){}},APP_CONFIG:{PAYROLL_HISTORY_LOCAL:true,SUPABASE_URL:'http://127.0.0.1:54321'},
     $:id=>document.getElementById(id),currentUser:{id:'actor'},canUseCompanyDashboard:()=>true,currentCompany:()=>company,jobsContextVersion:1,
     activePayrollRules:()=>rules,isTrElectricalCompany:()=>false,normalisePayrollRules:r=>r,crypto:require('node:crypto').webcrypto,payrollRows:rows,payrollSummaryRun:null,payrollSummaryRunVersion:1,
+    fetchCompanyDeductionTypes:async()=>[{id:'legacy'}],fetchPayrollItemDefinitions:async()=>[{id:'commission',display_name:'Commission'}],
+    fetchPayrollDeductions:async()=>[{id:'deduction'}],fetchPayrollAdjustments:async()=>[{id:'adjustment'}],
+    companyDeductionTypes:[],payrollItemDefinitions:[],payrollDeductions:[],payrollAdjustments:[],
     renderPayrollRows:r=>{c.payrollRows=r;},currentPayrollSummaryRun:()=>c.payrollSummaryRun,
     el:{payrollStartDate:{value:'2026-09-01'},payrollEndDate:{value:'2026-09-15'}},
     sb:{rpc:async(name,args)=>{calls.push({name,args}); if(name==='get_payroll_history') return {data:{revision:'R'}}; return {data:'ID'};}}};
@@ -150,6 +153,9 @@ test('UI draft, finalisation and read-only reprint contract',async()=>{
   vm.createContext(c);vm.runInContext(fs.readFileSync('public/payroll-history-ui.js','utf8'),c);
   c.payrollAuthority=async()=>({token:'server-confirmation',rows,rules,company,revision:'R'});
   await c.payrollHistoryLoadFinal(company,'2026-09-01','2026-09-15',1);
+  assert.deepEqual(c.payrollItemDefinitions,[{id:'commission',display_name:'Commission'}]);
+  assert.deepEqual(c.payrollDeductions,[{id:'deduction'}]);
+  assert.deepEqual(c.payrollAdjustments,[{id:'adjustment'}]);
   await c.openPayrollFinalisation();
   assert.equal(calls.filter(c=>c.name==='finalise_payroll').length,0,'opening modal is not confirmation');
   c.payrollSummaryRun=null;
