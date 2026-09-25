@@ -13,7 +13,7 @@
     { employeeId: "E111", name: "Sipho Ndlovu", role: "Technician" },
     { employeeId: "E118", name: "Ayesha Daniels", role: "Assistant" }
   ];
-  const adminTabs = [["overview", "Overview"], ["work", "Work Record"], ["team-time", "Team & Time"], ["review", "Review"], ["card", "Job Card"]];
+  const adminTabs = [["overview", "Overview"], ["today", "Today's Work"], ["work", "Work Record"], ["team-time", "Team & Time"], ["review", "Review"], ["card", "Job Card"]];
   const supervisorTabs = [["overview", "Overview"], ["today", "Today's Work"], ["records", "Job Records"], ["signoff", "Sign-off"]];
 
   const initialState = () => ({
@@ -250,11 +250,13 @@
   let planningPending=false;
   let liveWorkerActive=false;
   function canExecute(job=liveDetail) {
-    return !isMockMode && window.ShiftlyJobsData.canOpen(liveContext()) && liveContext().role==='supervisor' && liveWorkerActive && liveAdapter?.capabilities.execution===true && job?.detailLoaded===true && job.team.some(e=>e.employeeId===liveContext().employeeId);
+    const context=liveContext();
+    return !isMockMode && window.ShiftlyJobsData.canOpen(context) && liveWorkerActive && liveAdapter?.capabilities.execution===true && job?.detailLoaded===true &&
+      (['owner','admin'].includes(context.role) || context.role==='supervisor' && job.team.some(e=>e.employeeId===context.employeeId));
   }
   function canOperate(){return canPlan()||canExecute();}
   function canAddMaterial(job=liveDetail){return canExecute(job)&&!!currentSession(job)&&['in_progress','correction_required'].includes(job.status);}
-  function isLead(job){return canExecute(job)&&job.lead?.employeeId===liveContext().employeeId;}
+  function isLead(job){return liveContext().role==='supervisor'&&canExecute(job)&&job.lead?.employeeId===liveContext().employeeId;}
   function reviewAllowed(method,job=liveDetail) {
     if(!job||!liveAdapter?.capabilities.review||['completed','cancelled'].includes(job.status))return false;
     if(['submit','resubmit'].includes(method))return isLead(job)&&['in_progress','correction_required'].includes(job.status)&&!openSessions(job).length&&job.workDays.some(d=>d.work?.trim())&&(method!=='resubmit'||!!job.correctedAt);
@@ -275,6 +277,7 @@
   }
   function mockState() { return isMockMode && dataService ? dataService.getState() : { jobs: [], sequence: 0 }; }
   function jobsEmployeeId() { return isMockMode ? supervisorIdentity.employeeId : currentJobsContext().employeeId || ''; }
+  function jobsUserId() { return isMockMode ? `demo-${role}` : currentJobsContext().userId || ''; }
   function getDirectories() {
     if (!isMockMode) return directoryCache;
     return { sites:[{siteId:'WORKSHOP',name:'Workshop'},{siteId:'ADMIN',name:'Administration Block'},{siteId:'LINE3',name:'Production Line 3'}],
@@ -395,7 +398,10 @@
   function totalMinutes(job) { return job.sessions.reduce((sum, item) => sum + minutesBetween(item.startedAt, item.endedAt), 0); }
   function duration(minutes) { const hrs = Math.floor(minutes / 60); const mins = minutes % 60; return `${hrs}h ${String(mins).padStart(2, "0")}m`; }
   function openSessions(job) { return job.sessions.filter((item) => !item.endedAt); }
-  function currentSession(job) { return openSessions(job).find((item) => item.employeeId === jobsEmployeeId()); }
+  function currentSession(job) {
+    if(role==='admin')return openSessions(job).find(item=>!item.employeeId&&item.startedBy===jobsUserId());
+    return openSessions(job).find((item) => item.employeeId === jobsEmployeeId());
+  }
   function isAssigned(job) { return job.team.some((person) => person.employeeId === jobsEmployeeId()); }
   function selectedJob() { return isMockMode ? state.jobs.find((job) => job.id === selectedJobId) : liveDetail; }
 
@@ -559,7 +565,7 @@
     liveStatus='loading-detail';renderLiveList();
     try {
       const detail=await liveAdapter.detail(id);
-      const workerActive=liveContext().role==='supervisor'?await liveAdapter.workEligibility():false;
+      const workerActive=await liveAdapter.workEligibility();
       if(!liveReadValid(request,key))return;
       liveWorkerActive=workerActive;
       liveStatus='ready';renderLiveList();liveDetail=detail;openJob(id,true);
@@ -742,10 +748,11 @@
   function fact(label, value) { return `<div class="jobsFact"><span>${label}</span><b>${h(value)}</b></div>`; }
 
   function workflowBar(job) {
+    if(!isMockMode && role==='admin' && activeTab==='today')return '';
     if(!isMockMode && role==='admin' && activeTab!=='team-time')return '';
     if(!isMockMode) {
       const own=currentSession(job);
-      if(canExecute(job))return `<div class="jobsActionBar"><div class="jobsActionCopy"><b>${own?'Active session':job.status==='in_progress'?'Paused — no own open session':'Job work'}</b><span>Job work time is separate from attendance.</span></div><div class="jobsActionButtons">${own&&job.status==='in_progress'?'<button class="platformBtn inline jobsBtn primary" data-action="execute-finish">Finish Work for Today</button>':!own&&['scheduled','in_progress','correction_required'].includes(job.status)?`<button class="platformBtn inline jobsBtn primary" data-action="execute-start">${job.status==='scheduled'?'Start Job':'Continue Job'}</button>`:''}</div></div>`;
+      if(role==='supervisor'&&canExecute(job))return `<div class="jobsActionBar"><div class="jobsActionCopy"><b>${own?'Active session':job.status==='in_progress'?'Paused — no own open session':'Job work'}</b><span>Job work time is separate from attendance.</span></div><div class="jobsActionButtons">${own&&job.status==='in_progress'?'<button class="platformBtn inline jobsBtn primary" data-action="execute-finish">Finish Work for Today</button>':!own&&['scheduled','in_progress','correction_required'].includes(job.status)?`<button class="platformBtn inline jobsBtn primary" data-action="execute-start">${job.status==='scheduled'?'Start Job':'Continue Job'}</button>`:''}</div></div>`;
       if(canPlan()&&['in_progress','correction_required'].includes(job.status)&&openSessions(job).length)return `<div class="jobsActionBar"><b>Open technician sessions</b><div class="jobsActionButtons">${openSessions(job).map(s=>`<button class="platformBtn inline jobsBtn danger" data-action="execute-recover" data-session="${h(s.id)}">Emergency Close Session — ${h(s.employeeName)}</button>`).join('')}</div></div>`;
     }
     if(canPlan() && !['completed','cancelled','submitted_for_review'].includes(job.status))return ['draft','scheduled'].includes(job.status)?'<div class="jobsActionButtons"><button class="platformBtn inline jobsBtn secondary" data-action="plan-schedule">Schedule / reschedule</button></div>':'';
@@ -816,7 +823,7 @@
 
   function renderTab(job, tab, readOnly) {
     if (role === "admin") {
-      const renderers = { overview: adminOverviewTab, work: adminWorkTab, "team-time": adminTeamTimeTab, review: adminReviewTab, card: jobCardTab };
+      const renderers = { overview: adminOverviewTab, today: todayWorkTab, work: adminWorkTab, "team-time": adminTeamTimeTab, review: adminReviewTab, card: jobCardTab };
       return (renderers[tab] || adminOverviewTab)(job, readOnly);
     }
     const renderers = { overview: supervisorOverviewTab, today: todayWorkTab, records: supervisorRecordsTab, signoff: (job,readOnly)=>`${signoffTab(job,readOnly)}${reviewBar(job)}`, card: jobCardTab };
@@ -854,7 +861,7 @@
       <label class="jobsLabel jobsOutstandingNotes">Notes / Outstanding Work<textarea class="jobsInput platformInput" name="todayNotes" placeholder="What remains to be done? Include access notes or handover details.">${h(draft.notes)}</textarea></label>
       <div class="jobsTodayFinish"><div><b>Ready to finish this session?</b><span>Save this work record. The Job stays open for another day.</span></div><button class="platformBtn inline jobsBtn primary" type="submit"><i class="ph ph-stop-circle"></i>Finish Work for Today</button></div></form>`;
   }
-  function materialsTab(job, readOnly) { return panel("Materials used", "", dataRows(job.materials, (item) => `<div><b>${h(item.description)}</b><span>${h(item.by)} · ${localDateTime(item.addedAt)}</span></div><strong>${h(item.quantity)} ${h(item.unit)}</strong>`), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-material"><i class="ph ph-plus"></i>Add material</button>` : ""); }
+  function materialsTab(job, readOnly) { return panel("Materials used", "", dataRows(job.materials, (item) => `<div><b>${h(item.description)}</b><span>${h(item.by)} · ${localDateTime(item.addedAt)}</span></div><strong>${h(item.quantity)} ${h(item.unit)}</strong>`), !readOnly && (isMockMode ? ['admin','supervisor'].includes(role) && !!currentSession(job) : canAddMaterial(job)) ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-material"><i class="ph ph-plus"></i>Add material</button>` : ""); }
   function testingTab(job, readOnly) { return panel("Testing & results", "", dataRows(job.testing, (item) => `<div><b>${h(item.description)}</b><span>${h(item.note || "No additional note")} · ${h(item.by)}</span></div><strong>${h(item.result)}</strong>`), !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-test"><i class="ph ph-plus"></i>Add result</button>` : ""); }
   function photoImage(item, paper=false) {
     return item.photoUrl && /^https:\/\//.test(item.photoUrl) ? `<a href="${h(item.photoUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${h(item.category)} photo"><img src="${h(item.photoUrl)}" alt="${h(item.note || item.category + ' photo')}" referrerpolicy="no-referrer" style="width:100%;${paper?'height:auto;object-fit:contain':'height:160px;object-fit:cover'}" /></a>` : '<div class="jobsPhotoVisual"><i class="ph ph-image"></i></div>';
@@ -873,7 +880,7 @@
   function photoPreview(job) {
     return `<div class="jobsPhotoPreview"><div class="jobsPhotoGrid">${job.photos.slice(0,3).map((item,index) => `<button type="button" class="jobsPhoto" data-action="photo-gallery" data-photo-id="${h(item.id)}" aria-label="Open photo gallery, ${h(item.category)}, ${job.photos.length} photos"><span class="jobsPhotoThumb">${item.photoUrl && /^https:\/\//.test(item.photoUrl) ? `<img src="${h(item.photoUrl)}" alt="${h(item.note || item.category)}" referrerpolicy="no-referrer">` : '<span>Photo unavailable</span>'}${job.photos.length>index+1 ? `<span class="jobsPhotoMore">+${job.photos.length-index-1}</span>` : ''}</span><span class="jobsPhotoMeta"><b>${h(item.category)}</b>${item.note ? `<span>${h(item.note)}</span>` : ''}</span></button>`).join('')}</div></div>`;
   }
-  function photosTab(job, readOnly) { if (!photosAvailable()) return panel("Photos", "", '<p>Media will be available in a later phase.</p><button type="button" disabled>Add photo</button>'); return panel("Photos", "", `${job.photoError?`<p role="status">${h(job.photoError)}</p>`:''}${job.photos.length ? photoPreview(job) : empty("camera", "No photos added", "Before, During, After and Other photos will appear here.")}`, !readOnly && role === "supervisor" ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-photo"><i class="ph ph-camera"></i>Add photo</button>` : ""); }
+  function photosTab(job, readOnly) { if (!photosAvailable()) return panel("Photos", "", '<p>Media will be available in a later phase.</p><button type="button" disabled>Add photo</button>'); return panel("Photos", "", `${job.photoError?`<p role="status">${h(job.photoError)}</p>`:''}${job.photos.length ? photoPreview(job) : empty("camera", "No photos added", "Before, During, After and Other photos will appear here.")}`, !readOnly && (isMockMode ? ['admin','supervisor'].includes(role) && !!currentSession(job) : canAddMaterial(job)) ? `<button class="platformBtn inline jobsBtn small secondary" type="button" data-action="add-photo"><i class="ph ph-camera"></i>Add photo</button>` : ""); }
   function openPhotoGallery(photoId) {
     const job = selectedJob();
     if (!job || !photosAvailable() || !job.photos.length) return;
@@ -1106,7 +1113,7 @@
   async function fetchPlanningState(jobId) {
     const rows=await liveAdapter.dashboard();
     const detail=jobId?await liveAdapter.detail(jobId):null;
-    const workerActive=liveContext().role==='supervisor'?await liveAdapter.workEligibility():false;
+    const workerActive=await liveAdapter.workEligibility();
     return {rows,detail,workerActive};
   }
   async function refreshPlanning() {
@@ -1150,7 +1157,7 @@
     }
     if(['submit','resubmit','returnCorrection','approve','cancel'].includes(method)){if(!reviewAllowed(method))throw new Error('This lifecycle action is no longer available. Refresh the Job.');}
     else if(method==='addMaterial'||method==='addPhoto'){if(!canAddMaterial()||(method==='addPhoto'&&!photosAvailable()))throw new Error('Own active work session required to add evidence.');}
-    else if(['start','finish'].includes(method)){if(!canExecute())throw new Error('Assigned active Supervisor required.');}
+    else if(['start','finish'].includes(method)){if(!canExecute())throw new Error('Operational Jobs access required.');}
     else if(!canPlan())throw new Error('Manager required.');
     const key=JSON.stringify(liveContext()),adapter=liveAdapter;
     const current=()=>adapter===liveAdapter&&key===JSON.stringify(liveContext())&&canOperate()&&!shell.hidden;

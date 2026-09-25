@@ -48,7 +48,9 @@
     const manager = () => { if (!['admin', 'owner'].includes(context.role)) fail('Manager required', '42501'); };
     const assigned = job => job.team.some(person => person.employeeId === context.employeeId);
     const allowed = job => canOpen(context) && (['owner', 'admin'].includes(context.role) || assigned(job));
-    const worker = job => { if (context.role !== 'supervisor' || !assigned(job)) fail('Assigned Supervisor required', '42501'); };
+    const worker = job => { if (!['owner','admin'].includes(context.role) && (context.role !== 'supervisor' || !assigned(job))) fail('Assigned Supervisor or company manager required', '42501'); };
+    const workerIdentity = () => context.role === 'supervisor' ? { employeeId: context.employeeId, name: identity.name } : { employeeId: null, name: 'Amina Jacobs' };
+    const ownsSession = session => context.role === 'supervisor' ? session.employeeId === context.employeeId : !session.employeeId && session.startedBy === context.userId;
     const noOpen = job => { if (job.sessions.some(s => !s.endedAt)) fail('Finish all open Job sessions before continuing.'); };
     const meaningful = job => { if (!job.workDays.some(d => d.work.trim())) fail('Record work before submitting.'); };
     function transaction(jobId, revision, action) {
@@ -87,13 +89,14 @@
       start(jobId, revision) { return transaction(jobId, revision, (next, job, stamp, log) => {
         worker(job); if (!['scheduled','in_progress','correction_required'].includes(job.status)) fail('Job unavailable for work');
         if (!job.lead) fail('Active lead required');
-        if (next.jobs.some(j => j.sessions.some(s => s.employeeId === context.employeeId && !s.endedAt))) fail('Finish your open Job session first', '23505');
-        const prior = job.sessions.length; job.sessions.push({ id: id(), employeeId: context.employeeId, employeeName: identity.name, startedAt: stamp, endedAt: null });
+        if (next.jobs.some(j => j.sessions.some(s => ownsSession(s) && !s.endedAt))) fail('Finish your open Job session first', '23505');
+        const actor=workerIdentity();
+        const prior = job.sessions.length; job.sessions.push({ id: id(), employeeId: actor.employeeId, employeeName: actor.name, startedBy: context.userId, startedAt: stamp, endedAt: null });
         job.status = 'in_progress'; job.currentDraft = { work: '', notes: '' }; log(prior ? 'job_continued' : 'job_started', 'Work session started');
       }); },
       finish(jobId, revision, work, notes) { return transaction(jobId, revision, (_, job, stamp, log) => {
         worker(job); if (job.status !== 'in_progress' || !work?.trim()) fail('Meaningful work record required');
-        const open = job.sessions.find(s => s.employeeId === context.employeeId && !s.endedAt); if (!open) fail('No open session');
+        const open = job.sessions.find(s => ownsSession(s) && !s.endedAt); if (!open) fail('No open session');
         job.workDays.push({ id: id(), date: new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Johannesburg' }).format(new Date(open.startedAt)), work: work.trim(), notes: notes || '', sessionIds: [open.id],
           materialIds: job.materials.filter(e => e.sessionId === open.id).map(e => e.id), photoIds: job.photos.filter(e => e.sessionId === open.id).map(e => e.id), testingIds: job.testing.filter(e => e.sessionId === open.id).map(e => e.id) });
         open.endedAt = stamp; delete job.currentDraft; log('work_paused', 'Finished work for today');
@@ -116,8 +119,8 @@
       }); },
       evidence(jobId, revision, kind, data) { return transaction(jobId, revision, (_, job, stamp, log) => {
         worker(job); if (!['in_progress','correction_required'].includes(job.status)) fail('Evidence is read-only');
-        const sessionId = job.sessions.find(s => s.employeeId === context.employeeId && !s.endedAt)?.id || '';
-        const entry = { ...copy(data), id: id(), by: identity.name, addedAt: stamp, at: stamp, sessionId };
+        const sessionId = job.sessions.find(s => ownsSession(s) && !s.endedAt)?.id || '';
+        const entry = { ...copy(data), id: id(), by: workerIdentity().name, addedAt: stamp, at: stamp, sessionId };
         if (kind === 'material') { if (!(Number(data.quantity) > 0) || !data.description?.trim()) fail('Description and positive quantity required'); job.materials.push(entry); }
         else if (kind === 'test') { if (!data.description?.trim() || !data.result?.trim()) fail('Test description and result required'); job.testing.push(entry); }
         else if (kind === 'photo') job.photos.push(entry);
@@ -195,7 +198,7 @@
       priority: j.priority, status: j.lifecycle_status, correctionReason: j.correction_reason || '', correctedAt:j.corrected_at || null, cancelReason:j.cancel_reason || '',
       createdAt: j.created_at, lastActivity: j.updated_at, team: people, lead: people.find(p => p.role === 'lead'),
       company: { name: j.company_name, logoUrl: j.company_logo_url },
-      sessions: order(arr('job_time_entries'),'started_at').map(s => ({ id:s.id,employeeId:s.employee_id,employeeName:s.employee_name,startedAt:s.started_at,endedAt:s.ended_at })),
+      sessions: order(arr('job_time_entries'),'started_at').map(s => ({ id:s.id,employeeId:s.employee_id,employeeName:s.employee_name,startedBy:s.started_by,endedBy:s.ended_by,startedAt:s.started_at,endedAt:s.ended_at })),
       materials, testing, photos, notes: evidence(arr('job_notes')).map(n => ({...n,text:n.note})),
       workDays: order(arr('job_work_days'),'created_at').map(d => ({ id:d.id,date:d.work_date,work:d.work_performed,notes:d.notes,sessionIds:[d.session_id],
         materialIds:materials.filter(e => e.sessionId===d.session_id).map(e=>e.id),photoIds:photos.filter(e=>e.sessionId===d.session_id).map(e=>e.id),testingIds:testing.filter(e=>e.sessionId===d.session_id).map(e=>e.id) })),
@@ -255,7 +258,7 @@
     const manager=()=>{const c=context();if(!['owner','admin'].includes(c.role))fail('Manager required','42501');return c;};
     const rpc = (name, args) => {
       if(execution && name==='add_job_evidence' && args.p_kind==='material') {
-        if(context().role!=='supervisor')fail('Assigned Supervisor required','42501');
+        if(!['owner','admin','supervisor'].includes(context().role))fail('Operational Jobs access required','42501');
       }
       else if(review && ['submit_job_for_review','resubmit_job_for_review','return_job_for_correction','approve_job_complete','cancel_job'].includes(name)) {
         if(['submit_job_for_review','resubmit_job_for_review'].includes(name)){if(context().role!=='supervisor')fail('Supervisor lead required','42501');}
@@ -263,7 +266,7 @@
       }
       else if(execution && ['start_job_work','finish_work_for_today','admin_close_job_session'].includes(name)) {
         if(name==='admin_close_job_session')manager();
-        else if(context().role!=='supervisor')fail('Assigned Supervisor required','42501');
+        else if(!['owner','admin','supervisor'].includes(context().role))fail('Operational Jobs access required','42501');
       }
       else if(planning) {manager();if(!planningRpcs.includes(name))fail('Workflow not enabled','42501');}
       else if(readOnly) fail('Jobs is read-only','42501');
@@ -274,7 +277,7 @@
       mode:'supabase', capabilities:Object.freeze({mediaPersistence:false}), clear(){generation++;},
       async addPhoto(id,revision,data) {
         const c=context(),g=generation;
-        if(!pilotEnabled()||c.role!=='supervisor')fail('Assigned Supervisor required','42501');
+        if(!pilotEnabled()||!['owner','admin','supervisor'].includes(c.role))fail('Operational Jobs access required','42501');
         const file=data.file;
         if(!file?.size||file.size>8*1024*1024||!['image/jpeg','image/png','image/webp'].includes(file.type))fail('Choose a JPEG, PNG or WebP photo smaller than 8 MB.','VALIDATION');
         if(workerEndpoint){const blob=await compressPhoto(file);same(c,g);return photoRequest({action:'upload',jobId:id,revision,photoId:data.photoId,category:data.category,note:data.note},blob);}
@@ -288,6 +291,7 @@
         return rpc('add_job_evidence',{...args(id,revision),p_kind:'material',p_data:{description,quantity,unit}});
       },
       async workEligibility() {
+        if(['owner','admin'].includes(context().role))return true;
         if(context().role!=='supervisor')return false;
         const rows=await query(c=>client.from('employees').select('employee_id,active').eq('company_id',c.companyId).eq('employee_id',c.employeeId).eq('active',true).range(0,0));
         return rows.some(e=>e.active===true&&e.employee_id===getContext().employeeId);

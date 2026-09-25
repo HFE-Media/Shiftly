@@ -124,7 +124,7 @@ test('photo markup keeps compact controls, escapes notes and renders full image 
   const source = fs.readFileSync('public/jobs.js', 'utf8');
   const imageFn = source.slice(source.indexOf('  function photoImage('), source.indexOf('  function photosTab('));
   const photoFn = source.slice(source.indexOf('  function photosTab('), source.indexOf('  function notesTab('));
-  const sandbox = { h: s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'), photosAvailable: () => true, role: 'supervisor', panel: (a,b,c,d='') => c+d, localDateTime: () => 'today', empty: () => 'empty' };
+  const sandbox = { h: s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'), photosAvailable: () => true, isMockMode: false, canAddMaterial: () => true, role: 'supervisor', panel: (a,b,c,d='') => c+d, localDateTime: () => 'today', empty: () => 'empty' };
   vm.createContext(sandbox); vm.runInContext(imageFn + photoFn, sandbox);
   const p = { category: 'before', note: '<script>bad</script>', photoUrl: 'https://example.invalid/photo' };
   const html = sandbox.photosTab({ photos: [p] }, false);

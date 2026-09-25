@@ -62,7 +62,7 @@ function planningTransport() {
   };
   return client;
 }
-function executionTransport({active=true,assigned=true,status='scheduled',otherSession=false,lead=true}={}) {
+function executionTransport({active=true,assigned=true,status='scheduled',otherSession=false,lead=true,manager=false}={}) {
   const model={job:{...liveRow,lifecycle_status:status},revision:1,sessions:otherSession?[{id:'other-session',employee_id:'OTHER',employee_name:'Other technician',started_at:'2026-09-08T08:00:00Z',ended_at:null}]:[],days:[],activity:[],calls:[]};
   const client=transport(r=>{
     assert.ok(['jobs','employees','job_assignments','job_time_entries','job_work_days','job_materials','job_test_results','job_notes','job_activity','job_completion_snapshots'].includes(r.table),'Forbidden table: '+r.table);
@@ -70,21 +70,22 @@ function executionTransport({active=true,assigned=true,status='scheduled',otherS
     if(r.table==='jobs')return {data:r.single?{...model.job,revision:model.revision}:[{...model.job,revision:model.revision}]};
     if(r.table==='job_materials')return {data:model.materials||[]};
     if(r.table==='employees')return {data:active?[{employee_id:liveCtx.employeeId,active:true}]:[]};
-    const rows={job_assignments:assigned?[{employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',assignment_role:lead?'lead':'member'}]:[],job_time_entries:model.sessions,job_work_days:model.days,job_activity:model.activity};
+    const assignments=manager?[{employee_id:'LEAD',employee_name:'Existing Lead',assignment_role:'lead'},{employee_id:'MEMBER',employee_name:'Existing Technician',assignment_role:'member'}]:assigned?[{employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',assignment_role:lead?'lead':'member'}]:[];
+    const rows={job_assignments:assignments,job_time_entries:model.sessions,job_work_days:model.days,job_activity:model.activity};
     return {data:JSON.parse(JSON.stringify((rows[r.table]||[]).map(row=>({job_id:model.job.id,...row}))))};
   });
   client.model=model;
   client.rpc=async(name,args)=>{
     model.calls.push({name,args});assert.equal(args.p_revision,model.revision);
     if(name==='add_job_evidence'){
-      assert.equal(args.p_kind,'material');const session=model.sessions.find(s=>s.employee_id===liveCtx.employeeId&&!s.ended_at);assert.ok(session);
+      assert.equal(args.p_kind,'material');const session=model.sessions.find(s=>(manager?!s.employee_id&&s.started_by===liveCtx.userId:s.employee_id===liveCtx.employeeId)&&!s.ended_at);assert.ok(session);
       model.materials=[...(model.materials||[]),{id:'saved-material',...args.p_data,session_id:session.id,actor_name:'Stored Supervisor',created_at:'2026-09-09T09:00:00Z'}];model.revision++;return {data:'saved-material'};
     }
     if(name==='start_job_work') {
-      model.job.lifecycle_status='in_progress';model.sessions.push({id:'stored-session-'+model.revision,employee_id:liveCtx.employeeId,employee_name:'Stored Supervisor',started_at:`2026-09-${String(8+model.days.length).padStart(2,'0')}T08:00:00Z`,ended_at:null});model.revision++;return {data:'ack-session-not-for-render'};
+      model.job.lifecycle_status='in_progress';model.sessions.push({id:'stored-session-'+model.revision,employee_id:manager?null:liveCtx.employeeId,employee_name:manager?'Stored Manager':'Stored Supervisor',started_by:liveCtx.userId,started_at:`2026-09-${String(8+model.days.length).padStart(2,'0')}T08:00:00Z`,ended_at:null});model.revision++;return {data:'ack-session-not-for-render'};
     }
     if(name==='finish_work_for_today') {
-      const s=model.sessions.find(s=>s.employee_id===liveCtx.employeeId&&!s.ended_at);assert.ok(s);s.ended_at=s.started_at.replace('08:00','16:00');
+      const s=model.sessions.find(s=>(manager?!s.employee_id&&s.started_by===liveCtx.userId:s.employee_id===liveCtx.employeeId)&&!s.ended_at);assert.ok(s);s.ended_at=s.started_at.replace('08:00','16:00');
       model.days.push({id:'stored-day-'+model.revision,session_id:s.id,work_date:s.started_at.slice(0,10),work_performed:args.p_work,notes:args.p_notes,created_at:s.ended_at});model.revision++;return {data:'ack-day-not-for-render'};
     }
     const lifecycle={submit_job_for_review:['submitted_for_review','submitted_for_review'],resubmit_job_for_review:['submitted_for_review','resubmitted'],return_job_for_correction:['correction_required','returned_for_correction'],approve_job_complete:['completed','completed'],cancel_job:['cancelled','cancelled']}[name];
@@ -604,6 +605,34 @@ test('assigned active Supervisor starts, finishes and continues multi-day work w
   assert.deepEqual(client.model.calls.map(c=>c.args.p_revision),[1,2,3,4]);
   assert.equal(client.model.calls[1].args.p_work,'Day 1 work');assert.equal(client.model.calls[1].args.p_notes,'Remaining tasks');
   assert.equal(h.window.__jobsTest.detail().sessions[0].endedAt,'2026-09-08T16:00:00Z');
+});
+
+test('unassigned Admin and Owner share Today\'s Work without changing lead or team',async()=>{
+  for(const role of ['admin','owner']){
+    const client=executionTransport({manager:true,assigned:false}),h=await harness('admin','preview.invalid',{...liveCtx,role,employeeId:''},client);
+    await h.window.ShiftlyJobs.openAdmin();await h.click('[data-action="open"]');
+    const tabs=[...h.document.querySelectorAll('.jobsTab')].map(tab=>tab.textContent.trim());
+    assert.deepEqual(tabs,['Overview',"Today's Work",'Work Record','Team & Time','Review','Job Card']);
+    await h.click('[data-tab="team-time"]');assert.ok(h.document.querySelector('[data-action="plan-team"]'));
+    const staffing=JSON.stringify({lead:h.window.__jobsTest.detail().lead,team:h.window.__jobsTest.detail().team});
+    await h.click('[data-tab="today"]');assert.ok(h.document.querySelector('[data-action="execute-start"]'));
+    await h.click('[data-action="execute-start"]');await h.submit({});
+    let job=h.window.__jobsTest.detail();assert.equal(job.sessions[0].employeeId,null);assert.equal(job.sessions[0].startedBy,liveCtx.userId);
+    assert.equal(JSON.stringify({lead:job.lead,team:job.team}),staffing);
+    assert.ok(!job.team.some(person=>person.employeeId===liveCtx.employeeId));
+    await h.click('[data-tab="today"]');await h.click('[data-action="add-material"]');await h.submit({description:'Manager supplied cable',quantity:'2',unit:'metres'});
+    assert.equal(h.window.__jobsTest.detail().materials.length,1);
+    await h.click('[data-action="execute-finish"]');await h.submit({work:'Manager field work',notes:'No attendance action'});
+    job=h.window.__jobsTest.detail();assert.equal(job.workDays.length,1);assert.equal(JSON.stringify({lead:job.lead,team:job.team}),staffing);
+    await h.click('[data-tab="today"]');assert.match(h.document.querySelector('[data-action="execute-start"]').textContent,/Continue Job/);
+    await h.click('[data-action="execute-start"]');await h.submit({});
+    await h.click('[data-action="execute-finish"]');await h.submit({work:'Second manager work day',notes:''});
+    assert.equal(h.window.__jobsTest.detail().workDays.length,2);
+    assert.deepEqual(client.model.calls.map(call=>call.name),['start_job_work','add_job_evidence','finish_work_for_today','start_job_work','finish_work_for_today']);
+    assert.ok(client.model.calls.every(call=>!['clock_batch','assign_job_employee','replace_job_lead','unassign_job_employee'].includes(call.name)));
+    await h.click('[data-tab="work"]');assert.match(h.document.querySelector('#jobsTabPanel').textContent,/Manager field work/);
+    for(const tab of ['team-time','review','card'])assert.ok(h.document.querySelector(`[data-tab="${tab}"]`));
+  }
 });
 
 test('unassigned, inactive, missing identity and closed states expose no execution controls',async()=>{

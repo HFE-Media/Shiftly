@@ -8,14 +8,15 @@ vm.runInNewContext(fs.readFileSync('public/jobs-data.js','utf8'),sandbox);
 const API = sandbox.window.ShiftlyJobsData;
 const person={employeeId:'E100',name:'Demo Supervisor',role:'supervisor'};
 const ctx=role=>({companyId:'demo',userId:role,role,jobsEnabled:true,employeeId:'E100'});
-test('materials facade allows only validated material RPC for supervisors',async()=>{
+test('materials facade allows validated operational RPC for supervisors and company managers',async()=>{
   let c=ctx('supervisor');const calls=[];
   const api=API.createSupabase({getContext:()=>c,readOnly:true,execution:true,client:{rpc:async(name,args)=>{calls.push({name,args});return {data:'material-id'};}}});
   assert.equal(api.evidence,undefined);
   assert.equal(await api.addMaterial('j',4,{description:' Cable ',quantity:2.5,unit:'metres',actor:'forged'}),'material-id');
   assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{name:'add_job_evidence',args:{p_company_id:'demo',p_job_id:'j',p_revision:4,p_kind:'material',p_data:{description:'Cable',quantity:2.5,unit:'metres'}}});
   for(const quantity of [0,-1,Infinity,NaN])assert.throws(()=>api.addMaterial('j',4,{description:'Cable',quantity,unit:'m'}));
-  c=ctx('admin');assert.throws(()=>api.addMaterial('j',4,{description:'Cable',quantity:1,unit:'m'}),/Supervisor/);assert.equal(calls.length,1);
+  for(const role of ['admin','owner']){c=ctx(role);await api.addMaterial('j',4,{description:'Cable',quantity:1,unit:'m'});}
+  c=ctx('employee');assert.throws(()=>api.addMaterial('j',4,{description:'Cable',quantity:1,unit:'m'}),/Operational|denied/);assert.equal(calls.length,3);
 });
 test('lead directory uses only scoped read RPC, paginates and rejects stale context',async()=>{
   let c=ctx('admin');const calls=[];
@@ -58,16 +59,19 @@ test('review facade maps only reviewed lifecycle arguments and enforces role bou
   assert.deepEqual(JSON.parse(JSON.stringify(calls[3])),{name:'approve_job_complete',args:{p_company_id:'demo',p_job_id:'j',p_revision:6}});
   assert.equal(calls[4].args.p_reason,'Reason');assert.equal(calls.length,5);
 });
-test('execution facade uses exact lifecycle arguments and blocks other roles/review/evidence',async()=>{
+test('execution facade uses exact lifecycle arguments for assigned supervisors and company managers',async()=>{
   let c=ctx('supervisor');const calls=[];
   const api=API.createSupabase({readOnly:true,execution:true,getContext:()=>c,client:{rpc:async(name,args)=>{calls.push({name,args});return {data:name==='admin_close_job_session'?9:'server-uuid'};}}});
   for(const key of ['create','submit','resubmit','returnCorrection','approve','cancel','evidence','setEntitlement'])assert.equal(api[key],undefined);
   assert.equal(await api.start('job',3),'server-uuid');assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{name:'start_job_work',args:{p_company_id:'demo',p_job_id:'job',p_revision:3}});
   await api.finish('job',4,'Work','Notes');assert.deepEqual(JSON.parse(JSON.stringify(calls[1].args)),{p_company_id:'demo',p_job_id:'job',p_revision:4,p_work:'Work',p_notes:'Notes'});
   assert.throws(()=>api.adminCloseSession('job',4,'session','reason'),/Manager/);
-  c=ctx('admin');assert.throws(()=>api.start('job',4),/Supervisor/);assert.throws(()=>api.finish('job',4,'Work'),/Supervisor/);
-  await api.adminCloseSession('job',8,'session','Recovery');assert.deepEqual(JSON.parse(JSON.stringify(calls[2].args)),{p_company_id:'demo',p_job_id:'job',p_revision:8,p_session_id:'session',p_reason:'Recovery'});
-  c={...ctx('supervisor'),jobsEnabled:false};assert.throws(()=>api.start('job',4),/denied/);assert.equal(calls.length,3);
+  c=ctx('admin');await api.start('job',4);await api.finish('job',5,'Manager work','Notes');
+  c=ctx('owner');await api.start('job',6);await api.finish('job',7,'Owner work','Notes');
+  c=ctx('employee');assert.throws(()=>api.start('job',4),/Operational|denied/);assert.throws(()=>api.finish('job',4,'Work'),/Operational|denied/);
+  c=ctx('admin');
+  await api.adminCloseSession('job',8,'session','Recovery');assert.deepEqual(JSON.parse(JSON.stringify(calls[6].args)),{p_company_id:'demo',p_job_id:'job',p_revision:8,p_session_id:'session',p_reason:'Recovery'});
+  c={...ctx('supervisor'),jobsEnabled:false};assert.throws(()=>api.start('job',4),/denied/);assert.equal(calls.length,7);
 });
 test('planning adapter exposes only approved RPCs and no entitlement/lifecycle/evidence writes',async()=>{
   let c=ctx('admin');const calls=[];
