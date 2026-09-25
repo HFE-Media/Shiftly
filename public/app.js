@@ -2280,59 +2280,86 @@ function timesheetSiteLabel(event) {
 
 function buildTimesheetRows(events, start, end, rulesInput) {
   const rules = normalisePayrollRules(rulesInput);
-  const grouped = new Map();
-  for (const event of events) {
+  const grouped = new Map(datesInRange(start, end).map((date) => [dateKey(date), {
+    date,
+    firstIn: null,
+    firstInSite: "",
+    lastOut: null,
+    workedMs: 0,
+    incomplete: false,
+    automaticClockOut: false,
+    sessions: []
+  }]));
+  const approvedEvents = [];
+  for (const event of events || []) {
+    if (String(event.result || "").toUpperCase() !== "OK") continue;
     const time = rules.payroll_profile === "mixocron" ? mixocronWallEventTime(event) : payrollEventTime(event, rules);
     if (!Number.isFinite(time.getTime())) continue;
-    const key = dateKey(time);
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key).push({ ...event, _time: time });
+    const action = String(event.action || "").toUpperCase();
+    if (!["IN", "OUT"].includes(action)) continue;
+    approvedEvents.push({ ...event, action, _time: time });
+  }
+  approvedEvents.sort((a, b) => a._time - b._time || String(a.entry_id || "").localeCompare(String(b.entry_id || "")));
+
+  const stateFor = (time) => grouped.get(dateKey(time));
+  let pendingIn = null;
+  for (const event of approvedEvents) {
+    if (event.action === "IN") {
+      if (pendingIn) {
+        const abandoned = stateFor(pendingIn._time);
+        if (abandoned) abandoned.incomplete = true;
+      }
+      pendingIn = event;
+      const state = stateFor(event._time);
+      if (state && !state.firstIn) {
+        state.firstIn = event._time;
+        state.firstInSite = timesheetSiteLabel(event);
+      }
+      continue;
+    }
+
+    if (!pendingIn || event._time <= pendingIn._time) {
+      const orphan = stateFor(event._time);
+      if (orphan) orphan.incomplete = true;
+      continue;
+    }
+
+    const state = stateFor(pendingIn._time);
+    if (state) {
+      state.workedMs += event._time - pendingIn._time;
+      state.lastOut = event._time;
+      state.automaticClockOut = String(event.message || "").startsWith("AUTO CLOCK-OUT FLAG:");
+      state.sessions.push([pendingIn, event]);
+    }
+    pendingIn = null;
+  }
+  if (pendingIn) {
+    const state = stateFor(pendingIn._time);
+    if (state) state.incomplete = true;
   }
 
-  return datesInRange(start, end).map((date) => {
-    const dayEvents = (grouped.get(dateKey(date)) || []).sort((a, b) => a._time - b._time);
-    if (!dayEvents.length) return { date, firstIn: null, firstInSite: "", lastOut: null, breakMinutes: null, workedMinutes: 0, incomplete: false };
-    let pendingIn = null;
-    let firstIn = null;
-    let firstInSite = "";
-    let lastOut = null;
-    let workedMs = 0;
-    let incomplete = false;
-    let automaticClockOut = false;
-    for (const event of dayEvents) {
-      const action = String(event.action || "").toUpperCase();
-      if (action === "IN") {
-        if (pendingIn) incomplete = true;
-        pendingIn = event._time;
-        if (!firstIn) {
-          firstIn = event._time;
-          firstInSite = timesheetSiteLabel(event);
-        }
-      } else if (action === "OUT") {
-        if (!pendingIn || event._time <= pendingIn) {
-          incomplete = true;
-          continue;
-        }
-        workedMs += event._time - pendingIn;
-        lastOut = event._time;
-        automaticClockOut = String(event.message || "").startsWith("AUTO CLOCK-OUT FLAG:");
-        pendingIn = null;
-      }
+  return [...grouped.values()].map((state) => {
+    const { date, firstIn, firstInSite, lastOut, workedMs, incomplete, automaticClockOut, sessions } = state;
+    if (!firstIn && !lastOut && !incomplete) {
+      return { date, firstIn: null, firstInSite: "", lastOut: null, breakMinutes: null, workedMinutes: 0, incomplete: false };
     }
-    if (pendingIn) incomplete = true;
     if (incomplete) return { date, firstIn, firstInSite, lastOut, breakMinutes: null, workedMinutes: 0, incomplete: true };
 
     let workedMinutes = Math.max(0, Math.round(workedMs / 60000));
     let appliedDeduction = 0;
     if (rules.payroll_profile === "mixocron") {
-      const daily = buildMixocronDailyParts(dayEvents, rules);
-      workedMinutes = Math.max(0, Math.round(daily.parts.reduce((sum, part) => sum + part.hours, 0) * 60));
-      incomplete = daily.missingClockOut > 0 || daily.invalidSequence > 0;
+      workedMinutes = sessions.reduce((sum, [clockIn, clockOut]) => {
+        if (dateKey(clockIn._time) === dateKey(clockOut._time)) {
+          const daily = buildMixocronDailyParts([clockIn, clockOut], rules);
+          return sum + Math.max(0, Math.round(daily.parts.reduce((total, part) => total + part.hours, 0) * 60));
+        }
+        const parts = buildShiftPartsForPayroll(clockIn._time, clockOut._time, rules);
+        return sum + Math.max(0, Math.round(parts.reduce((total, part) => total + part.hours, 0) * 60));
+      }, 0);
     } else if (rules.lunch_deduction_enabled && workedMinutes > 0) {
       appliedDeduction = Math.min(workedMinutes, Math.max(0, rules.lunch_deduction_minutes));
       workedMinutes -= appliedDeduction;
     }
-    if (incomplete) workedMinutes = 0;
     const spanMinutes = firstIn && lastOut ? Math.max(0, Math.round((lastOut - firstIn) / 60000)) : 0;
     const sessionGap = Math.max(0, spanMinutes - Math.round(workedMs / 60000));
     return { date, firstIn, firstInSite, lastOut, breakMinutes: sessionGap + appliedDeduction, workedMinutes, incomplete, automaticClockOut };
@@ -2376,16 +2403,24 @@ async function openEmployeeTimesheet() {
   el.timesheetModal.classList.add("show");
   el.timesheetModal.setAttribute("aria-hidden", "false");
   try {
-    const { data, error } = await sb.from("clock_events")
-      .select("entry_id,created_at,action,employee_id,employee_name,site_id,site_name,result,message")
-      .eq(COMPANY_ID_COL, company.id)
-      .eq("employee_id", employee.employee_id)
-      .eq("result", "OK")
-      .gte("created_at", dateStartIso(start))
-      .lte("created_at", dateEndIso(end))
-      .order("created_at", { ascending: true });
-    if (error) throw error;
-    const rows = buildTimesheetRows(data || [], start, end, activePayrollRules());
+    const columns = "entry_id,created_at,action,employee_id,employee_name,site_id,site_name,result,message";
+    const startIso = dateStartIso(start);
+    const endIso = dateEndIso(end);
+    const [before, period, after] = await Promise.all([
+      sb.from("clock_events").select(columns)
+        .eq(COMPANY_ID_COL, company.id).eq("employee_id", employee.employee_id).eq("result", "OK")
+        .lt("created_at", startIso).order("created_at", { ascending: false }).limit(1),
+      sb.from("clock_events").select(columns)
+        .eq(COMPANY_ID_COL, company.id).eq("employee_id", employee.employee_id).eq("result", "OK")
+        .gte("created_at", startIso).lte("created_at", endIso).order("created_at", { ascending: true }),
+      sb.from("clock_events").select(columns)
+        .eq(COMPANY_ID_COL, company.id).eq("employee_id", employee.employee_id).eq("result", "OK")
+        .gt("created_at", endIso).order("created_at", { ascending: true }).limit(1)
+    ]);
+    const queryError = before.error || period.error || after.error;
+    if (queryError) throw queryError;
+    const events = [...(before.data || []), ...(period.data || []), ...(after.data || [])];
+    const rows = buildTimesheetRows(events, start, end, activePayrollRules());
     currentTimesheetReport = { company, employee, start, end, rows, totalMinutes: rows.reduce((sum, row) => sum + (row.incomplete ? 0 : row.workedMinutes), 0) };
     renderTimesheetReport(currentTimesheetReport);
   } catch (error) {
