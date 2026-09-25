@@ -26,8 +26,9 @@ test('Reports sits between Finalise and the existing far-right PDF action', () =
   assert.ok(finalise<report&&report<pdf);
   assert.match(html,/btnPayrollReports[^>]+title="Payroll Reports"/);
   assert.match(html,/ph ph-file-text/);
-  assert.match(html,/id="btnPayrollReports" class="miniIconBtn payrollHeaderAction"/);
-  assert.match(html,/\.payrollHeaderAction:not\(:disabled\):hover/);
+  assert.match(html,/id="btnFinalisePayroll" class="miniIconBtn payrollHeaderAction"/);
+  assert.match(html,/id="btnPayrollReports" class="miniIconBtn"/);
+  assert.match(html,/id="btnExportPayroll" class="miniIconBtn"/);
 });
 
 test('payroll presentation polish preserves responsive hierarchy and natural mobile card flow', () => {
@@ -85,8 +86,9 @@ test('monthly and EMP201 share the same authoritative totals without doubling co
   assert.match(doc,/not proof of submission to SARS/);
   assert.doesNotMatch(doc,/ETI|EMP501|IRP5/);
   assert.match(doc,/class="liabilities"/);
-  assert.match(doc,/\.liabilities\{width:320px;max-width:100%/);
+  assert.match(doc,/\.liabilities\{width:320px;max-width:100%;margin:28px 0 0 0/);
   assert.match(doc,/grid-template-columns:minmax\(0,1fr\) auto/);
+  assert.match(doc,/\.liabilities div b\{text-align:right/);
 });
 
 test('monthly and YTD totals use the same seven fixed report columns as headers and rows', () => {
