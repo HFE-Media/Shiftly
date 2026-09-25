@@ -26,6 +26,19 @@ test('Reports sits between Finalise and the existing far-right PDF action', () =
   assert.ok(finalise<report&&report<pdf);
   assert.match(html,/btnPayrollReports[^>]+title="Payroll Reports"/);
   assert.match(html,/ph ph-file-text/);
+  assert.match(html,/id="btnPayrollReports" class="miniIconBtn payrollHeaderAction"/);
+  assert.match(html,/\.payrollHeaderAction:not\(:disabled\):hover/);
+});
+
+test('payroll presentation polish preserves responsive hierarchy and natural mobile card flow', () => {
+  assert.match(html,/payrollSubtitleDesktop[^>]*>Hours and wage estimate from approved clock events\./);
+  assert.match(html,/payrollSubtitleMobile[^>]*>Payroll overview</);
+  assert.match(html,/@media \(max-width:860px\)\{[\s\S]*?\.payrollSubtitleDesktop\{display:none;\}[\s\S]*?\.payrollSubtitleMobile\{display:inline;\}/);
+  assert.match(html,/payrollReportsEmptyTitle[^>]*>No payroll reports available\./);
+  assert.match(html,/payrollReportsEmptyCopy[^>]*>Reports become available after a payroll period is finalised\./);
+  assert.match(html,/\.deductionStatSdlBase\{grid-column:2;\}/);
+  assert.match(html,/\.deductionStatSdlAmount\{grid-column:3;\}/);
+  assert.match(html,/@media \(max-width:860px\)[\s\S]*?\.deductionStatSdlBase,\.deductionStatSdlAmount\{grid-column:auto;\}/);
 });
 
 test('visibility follows the existing company PAYE/UIF applicability only', () => {
@@ -71,6 +84,20 @@ test('monthly and EMP201 share the same authoritative totals without doubling co
   assert.match(doc,/EMP201 summary only/);
   assert.match(doc,/not proof of submission to SARS/);
   assert.doesNotMatch(doc,/ETI|EMP501|IRP5/);
+  assert.match(doc,/class="liabilities"/);
+  assert.match(doc,/\.liabilities\{width:320px;max-width:100%/);
+  assert.match(doc,/grid-template-columns:minmax\(0,1fr\) auto/);
+});
+
+test('monthly and YTD totals use the same seven fixed report columns as headers and rows', () => {
+  for (const type of ['monthly','ytd']) {
+    const doc=reports.documentHtml(bundle,type);
+    assert.match(doc,/<table><colgroup>(?:<col style="width:\d+%">){7}<\/colgroup>/);
+    assert.match(doc,/table\{width:100%;table-layout:fixed/);
+    const total=doc.match(/<tr class="total">([\s\S]*?)<\/tr>/)?.[1]||'';
+    assert.equal((total.match(/<td/g)||[]).length,7);
+    assert.doesNotMatch(total,/colspan/);
+  }
 });
 
 test('YTD uses the server-provided selected-cutoff position and frozen identities', () => {

@@ -1096,6 +1096,8 @@ body{
   gap:9px;
   margin:14px 0;
 }
+.deductionStatSdlBase{grid-column:2;}
+.deductionStatSdlAmount{grid-column:3;}
 .deductionStat{
   border:1px solid rgba(212,175,55,0.12);
   background:rgba(255,255,255,0.025);
@@ -1960,6 +1962,7 @@ body{
   .workWeekRow{grid-template-columns:44px minmax(0,1fr) minmax(0,1fr);}
   .deductionModalCard{padding:16px;}
   .deductionStats{grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:12px 0;}
+  .deductionStatSdlBase,.deductionStatSdlAmount{grid-column:auto;}
   .deductionStat{padding:8px 7px; min-width:0;}
   .deductionStat b{font-size:13px; line-height:1.1; white-space:nowrap;}
   .deductionStat span{font-size:9px; margin-top:4px;}
@@ -2809,17 +2812,25 @@ select{
 .employeeSdlConfiguration label{display:block;font-size:11px;color:#ccc7bb;}
 .employeeSdlConfiguration .platformInput,.employeeSdlConfiguration .platformSelect{display:block;width:100%;margin-top:5px;}
 #payrollFinalStatus{font-size:11px;line-height:1.3;}
+.payrollSubtitleMobile{display:none;}
+.payrollHeaderAction{color:var(--gold);border-color:rgba(212,175,55,.28);background:rgba(255,255,255,.035);}
 #btnFinalisePayroll{color:#d4af37;}
 #btnFinalisePayroll svg{width:18px;height:18px;display:block;color:var(--gold);}
-#btnFinalisePayroll:not(:disabled):hover{background:rgba(212,175,55,.12);border-color:#d4af37;}
-#btnFinalisePayroll:focus-visible{outline:2px solid #d4af37;outline-offset:3px;}
+.payrollHeaderAction:not(:disabled):hover{background:rgba(212,175,55,.12);border-color:#d4af37;color:#f6e7b3;}
+.payrollHeaderAction:focus-visible{outline:2px solid #d4af37;outline-offset:3px;}
 #btnFinalisePayroll.isFinalised{opacity:1;color:#f0cd58;background:rgba(255,255,255,.035);border-color:rgba(212,175,55,.28);}
-#btnPayrollReports{color:#d4af37;}
 .payrollReportsForm{display:grid;gap:14px;margin-top:16px;}
 .payrollReportsField{display:grid;gap:7px;}
 .payrollReportsField>span{font-size:10px;font-weight:900;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;}
 .payrollReportsPeriodMeta{min-height:17px;color:var(--muted);font-size:11px;}
-.payrollReportsEmpty{padding:18px;border:1px solid rgba(212,175,55,.16);border-radius:14px;background:rgba(255,255,255,.025);line-height:1.55;}
+.payrollReportsEmpty{display:grid;gap:7px;margin-top:16px;padding:18px;border:1px solid rgba(212,175,55,.16);border-radius:14px;background:rgba(255,255,255,.025);}
+.payrollReportsEmpty[hidden]{display:none!important;}
+.payrollReportsEmptyTitle{font-size:14px;font-weight:900;line-height:1.3;color:var(--txt);}
+.payrollReportsEmptyCopy{font-size:11px;line-height:1.5;color:var(--muted);}
+@media (max-width:860px){
+  .payrollSubtitleDesktop{display:none;}
+  .payrollSubtitleMobile{display:inline;}
+}
 </style>
 </head>
 
@@ -3118,15 +3129,15 @@ select{
         <div class="panelHead">
           <div>
             <div class="panelTitle">Payroll</div>
-            <div class="mutedText">Hours and wage estimate from approved clock events.</div>
+            <div class="mutedText"><span class="payrollSubtitleDesktop">Hours and wage estimate from approved clock events.</span><span class="payrollSubtitleMobile">Payroll overview</span></div>
           </div>
           <div class="platformActions">
           <span id="payrollFinalStatus" class="mutedText" role="status">Not Finalised</span>
-          <button id="btnFinalisePayroll" class="miniIconBtn" type="button" title="Finalise Payroll" aria-label="Finalise Payroll" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m20 6-11 11-5-5" /></svg></button>
-          <button id="btnPayrollReports" class="miniIconBtn" type="button" title="Payroll Reports" aria-label="Payroll Reports" hidden>
+          <button id="btnFinalisePayroll" class="miniIconBtn payrollHeaderAction" type="button" title="Finalise Payroll" aria-label="Finalise Payroll" disabled><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m20 6-11 11-5-5" /></svg></button>
+          <button id="btnPayrollReports" class="miniIconBtn payrollHeaderAction" type="button" title="Payroll Reports" aria-label="Payroll Reports" hidden>
             <i class="ph ph-file-text"></i>
           </button>
-          <button id="btnExportPayroll" class="miniIconBtn" type="button" title="Generate payslip" aria-label="Generate payslip">
+          <button id="btnExportPayroll" class="miniIconBtn payrollHeaderAction" type="button" title="Generate payslip" aria-label="Generate payslip">
             <i class="ph ph-file-pdf"></i>
           </button>
           </div>
@@ -3637,8 +3648,8 @@ select{
         <div class="deductionStat"><b id="adjustmentTotal">R0.00</b><span>Adjustments</span></div>
         <div class="deductionStat"><b id="deductionTotal">R0.00</b><span>Deductions</span></div>
         <div class="deductionStat"><b id="deductionNetPay">R0.00</b><span>Net Pay</span></div>
-        <div class="deductionStat"><b id="deductionSdlBase">R0.00</b><span>SDL Leviable</span></div>
-        <div class="deductionStat"><b id="deductionSdlAmount">R0.00</b><span>Employer SDL</span></div>
+        <div class="deductionStat deductionStatSdlBase"><b id="deductionSdlBase">R0.00</b><span>SDL Leviable</span></div>
+        <div class="deductionStat deductionStatSdlAmount"><b id="deductionSdlAmount">R0.00</b><span>Employer SDL</span></div>
       </div>
       <div id="deductionList" class="deductionList"></div>
       <form id="deductionForm" class="deductionForm">
@@ -3679,7 +3690,7 @@ select{
       <button id="btnClosePayrollReports" class="modalCloseIcon" type="button" title="Close" aria-label="Close"><i class="ph ph-x"></i></button>
       <div class="modalTitle" id="payrollReportsTitle">Payroll Reports</div>
       <div id="payrollReportsLoading" class="modalSub">Select a finalised payroll period and report.</div>
-      <div id="payrollReportsEmpty" class="payrollReportsEmpty" hidden>No payroll reports available.<br>Reports become available after a payroll period is finalised.</div>
+      <div id="payrollReportsEmpty" class="payrollReportsEmpty" hidden><strong class="payrollReportsEmptyTitle">No payroll reports available.</strong><span class="payrollReportsEmptyCopy">Reports become available after a payroll period is finalised.</span></div>
       <div id="payrollReportsForm" class="payrollReportsForm">
         <label class="payrollReportsField"><span>Payroll Period</span><select id="payrollReportsPeriod" class="platformSelect" aria-label="Payroll Period"></select></label>
         <div id="payrollReportsPeriodMeta" class="payrollReportsPeriodMeta"></div>
