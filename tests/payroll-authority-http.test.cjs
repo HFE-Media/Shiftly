@@ -6,8 +6,10 @@ const c='10000000-0000-0000-0000-000000000001',actor='20000000-0000-0000-0000-00
 function adapter(overrides={}) {
   const env={SUPABASE_URL:'https://isolated.supabase.co',SUPABASE_ANON_KEY:'synthetic-anon',SUPABASE_SERVICE_ROLE_KEY:'synthetic-service',PAYROLL_ALLOWED_ORIGINS:'https://isolated.example',PAYROLL_CONFIRMATION_SECRET:'synthetic-signing-secret-at-least-32-characters',...overrides};
   let handler,saved;const calls=[];
-  const input={company:{id:c,name:'Synthetic',logo_url:''},rules:{calculate_paye:true,calculate_uif:true},
+  const input={company:{id:c,name:'Synthetic',logo_url:''},rules:{calculate_paye:true,calculate_uif:true,calculate_sdl:false},
     employees:[{employee_id:'E1',full_name:'Synthetic E1',active:true,rate:25000,pay_type:'monthly',pay_cycle:'monthly'}],deductionTypes:[],events:[],deductions:[],adjustments:[],levy:null,
+    classifications:[],uif_month:{month:'2026-09-01',employees:[{employee_id:'E1',ambiguous:false,liable:0,employee:0,employer:0}]},
+    sdl:{configuration:null,rate:null,employee_circumstances:[]},
     history:{revision:'fixture-revision',employees:[{employee_id:'E1'}]}};
   const context={URL,Request,Response,TextEncoder,TextDecoder,AbortSignal,btoa,atob,crypto:crypto.webcrypto,
     Deno:{env:{get:k=>env[k]},serve:fn=>{handler=fn;}},fetch:async(url,options)=>{

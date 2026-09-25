@@ -138,8 +138,8 @@ test('new model skips speculative calendars while retaining existing TR monthly 
 test('UI draft, finalisation and read-only reprint contract',async()=>{
   const {parseHTML}=require('linkedom');
   const {document}=parseHTML(fs.readFileSync('public/login.html','utf8'));
-  const company={id:'fixture',name:'Fixture',logo_url:''}; const rules={calculate_paye:true,calculate_uif:true};
-  const rows=[{employee_id:'E',gross:100,deductions:[]}]; const calls=[];
+  const company={id:'fixture',name:'Fixture',logo_url:''}; const rules={calculate_paye:true,calculate_uif:true,calculate_sdl:true};
+  const rows=[{employee_id:'E',gross:100,employer_uif:1,sdl_amount:1,deductions:[]}]; const calls=[];
   const c={document,window:{ShiftlyPayrollHistory:ph,location:{hostname:'127.0.0.1',href:'http://127.0.0.1:5198/login'},addEventListener(){}},APP_CONFIG:{PAYROLL_HISTORY_LOCAL:true,SUPABASE_URL:'http://127.0.0.1:54321'},
     $:id=>document.getElementById(id),currentUser:{id:'actor'},canUseCompanyDashboard:()=>true,currentCompany:()=>company,jobsContextVersion:1,
     activePayrollRules:()=>rules,isTrElectricalCompany:()=>false,normalisePayrollRules:r=>r,crypto:require('node:crypto').webcrypto,payrollRows:rows,payrollSummaryRun:null,payrollSummaryRunVersion:1,
@@ -168,9 +168,10 @@ test('UI draft, finalisation and read-only reprint contract',async()=>{
     if(++attempts===1) throw Error('Lost response');
     return {id:'ID'};
   };
+  const frozenRules=structuredClone(rules),frozenRow=structuredClone(rows[0]);
   c.sb.rpc=async(name,args)=>{
     calls.push({name,args});
-    if(name==='get_payroll_history') return {data:{run:{id:'ID',employee_count:1,company_snapshot:company,rules_snapshot:rules},periods:[{document_row:rows[0]}]}};
+    if(name==='get_payroll_history') return {data:{run:{id:'ID',employee_count:1,company_snapshot:company,rules_snapshot:frozenRules},periods:[{document_row:frozenRow}]}};
     return {data:'ID'};
   };
   await c.confirmPayrollFinalisation();
@@ -182,4 +183,10 @@ test('UI draft, finalisation and read-only reprint contract',async()=>{
   assert.equal(c.payrollSummaryRun.finalisedId,'ID');
   assert.equal(document.getElementById('payrollFinalStatus').textContent,'Finalised');
   assert.equal(c.payrollSummaryRun.rows[0]._payrollRules.calculate_paye,true);
+  rules.calculate_uif=false; rules.calculate_sdl=false; rows[0].employer_uif=0; rows[0].sdl_amount=0;
+  await c.payrollHistoryLoadFinal(company,'2026-09-01','2026-09-15',1);
+  assert.equal(c.payrollSummaryRun.rows[0].employer_uif,1);
+  assert.equal(c.payrollSummaryRun.rows[0].sdl_amount,1);
+  assert.equal(c.payrollSummaryRun.rows[0]._payrollRules.calculate_uif,true);
+  assert.equal(c.payrollSummaryRun.rows[0]._payrollRules.calculate_sdl,true);
 });

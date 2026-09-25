@@ -3415,6 +3415,43 @@ async function generateSelectedPayslip() {
   }
 }
 
+function payslipEmployerContributionModel(row, rules, totalEarnings) {
+  const authoritativeCents = (value) => {
+    if (value === undefined || value === null || value === "") return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0) throw new Error("Payslip contains an invalid employer contribution.");
+    return Math.round(number * 100);
+  };
+  const earnings = Number(totalEarnings);
+  if (!Number.isFinite(earnings) || earnings < 0) throw new Error("Payslip contains an invalid total earnings amount.");
+  const contributions = [];
+  const employerUif = rules?.calculate_uif === true ? authoritativeCents(row.employer_uif) : 0;
+  const sdl = rules?.calculate_sdl === true ? authoritativeCents(row.sdl_amount) : 0;
+  if (employerUif > 0) contributions.push({ key: "employer_uif", label: "UIF – Employer Contribution", cents: employerUif });
+  if (sdl > 0) contributions.push({ key: "sdl", label: "SDL", cents: sdl });
+  const totalCents = contributions.reduce((sum, contribution) => sum + contribution.cents, 0);
+  return {
+    contributions,
+    total: totalCents / 100,
+    companyCost: (Math.round(earnings * 100) + totalCents) / 100
+  };
+}
+
+function payslipEmployerContributionSection(row, rules, totalEarnings) {
+  const model = payslipEmployerContributionModel(row, rules, totalEarnings);
+  if (!model.contributions.length) return "";
+  return `<section class="employerContributions">
+    <div class="employerContributionsTitle">Employer Contributions</div>
+    <div class="employerContributionRows">
+      ${model.contributions.map((contribution) => `<div class="employerContributionRow"><span>${escapeHtml(contribution.label)}</span><b>R ${payslipAmount(contribution.cents / 100)}</b></div>`).join("")}
+    </div>
+    <div class="employerContributionTotals">
+      <div class="employerContributionRow employerContributionTotal"><span>Total Employer Contributions</span><b>R ${payslipAmount(model.total)}</b></div>
+      <div class="employerContributionRow employerCompanyCost"><span>Total Company Cost</span><b>R ${payslipAmount(model.companyCost)}</b></div>
+    </div>
+  </section>`;
+}
+
 function buildPayslipPage(company, row, period) {
   const b = row.breakdown || {};
   const rules = row._payrollRules || activePayrollRules();
@@ -3541,6 +3578,7 @@ function buildPayslipPage(company, row, period) {
         <div class="summaryRow"><span>Total Deductions</span><b>R ${totalDeductions > 0 ? payslipAmount(totalDeductions) : "-"}</b></div>
         <div class="summaryRow"><span>Net Pay</span><b>R ${payslipAmount(netPay)}</b></div>
       </section>
+      ${payslipEmployerContributionSection(row, rules, totalEarnings)}
     </div>`;
 }
 
@@ -3621,6 +3659,18 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
     .summaryRow span,.summaryRow b{padding:8px 11px}
     .summaryRow span{font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
     .summaryRow b{text-align:right;font-size:13px}
+    .employerContributions{margin-top:6mm;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;break-inside:avoid}
+    .employerContributionsTitle{padding:8px 11px;background:var(--soft);border-bottom:1px solid var(--line);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.10em}
+    .employerContributionRow{display:grid;grid-template-columns:1fr 42mm;align-items:center;border-bottom:1px solid #eee8dd}
+    .employerContributionRow span,.employerContributionRow b{padding:7px 11px}
+    .employerContributionRow span{font-weight:700}
+    .employerContributionRow b{text-align:right;font-size:12px}
+    .employerContributionRows .employerContributionRow:last-child{border-bottom:0}
+    .employerContributionTotals{border-top:1px solid var(--line)}
+    .employerContributionTotal span{font-weight:900;text-transform:uppercase;letter-spacing:.06em;font-size:9px}
+    .employerCompanyCost{border-bottom:0;background:var(--soft)}
+    .employerCompanyCost span{font-weight:900;text-transform:uppercase;letter-spacing:.07em;font-size:10px}
+    .employerCompanyCost b{font-size:13px;font-weight:900}
     @media screen and (max-width:820px){
       .preview{padding:54px 0 24px}
       .page{
