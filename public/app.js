@@ -3657,7 +3657,7 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
     .deductions th:nth-child(2),.deductions td:nth-child(2){text-align:right;font-weight:800}
     .summary{margin-top:9mm;border-radius:12px;border:2px solid var(--ink);overflow:hidden}
     .summaryRow{display:grid;grid-template-columns:1fr 42mm;border-bottom:1px solid var(--line)}
-    .summaryRow:last-child{border-bottom:0;background:var(--ink);color:#fff}
+    .summaryRow:last-child{border-bottom:0;background:var(--ink);color:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .summaryRow span,.summaryRow b{padding:8px 11px}
     .summaryRow span{font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
     .summaryRow b{text-align:right;font-size:13px}
