@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v253"; // Effective YTD cutoff fix
+const CACHE_NAME = "shiftly-v254"; // Jobs Admin field-work release
 
 const ASSETS = [
   "/",
@@ -17,9 +17,9 @@ const ASSETS = [
   "/app.js?v=204",
   "/payroll-reports.js?v=2",
   "/payroll-history-ui.js?v=10",
-  "/jobs.js?v=27",
+  "/jobs.js?v=28",
   "/jobs.css?v=29",
-  "/jobs-data.js?v=6",
+  "/jobs-data.js?v=7",
   "/manifest.json",
   "/icons/shiftly-favicon-32.png",
   "/icons/shiftly-favicon-192.png",
