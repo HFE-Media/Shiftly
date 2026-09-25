@@ -40,6 +40,7 @@ test('UIF and SDL use authoritative row values and add only to company cost', ()
   const html = context.payslipEmployerContributionSection(input, rules(), input.gross);
   assert.match(html, /UIF – Employer Contribution/);
   assert.match(html, />SDL</);
+  assert.match(html, /payslipDivider employerContributionsDivider/);
   assert.match(html, /Total Employer Contributions/);
   assert.match(html, /Total Company Cost/);
 });
@@ -57,6 +58,8 @@ test('UIF-only, SDL-only and neither follow the approved visibility rules', () =
 
   assert.equal(context.payslipEmployerContributionSection(row({ employer_uif: 0, sdl_amount: 0 }), rules(), 20000), '');
   assert.equal(context.payslipEmployerContributionSection(row(), rules({ calculate_uif: false, calculate_sdl: false }), 20000), '');
+  assert.match(app, /class="hero payslipDivider"/);
+  assert.match(app, /\.payslipDivider\{border-bottom:2px solid var\(--ink\)\}/);
 });
 
 test('employer UIF is read explicitly and never inferred from the employee UIF deduction', () => {

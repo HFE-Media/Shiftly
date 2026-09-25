@@ -3440,7 +3440,8 @@ function payslipEmployerContributionModel(row, rules, totalEarnings) {
 function payslipEmployerContributionSection(row, rules, totalEarnings) {
   const model = payslipEmployerContributionModel(row, rules, totalEarnings);
   if (!model.contributions.length) return "";
-  return `<section class="employerContributions">
+  return `<div class="payslipDivider employerContributionsDivider"></div>
+  <section class="employerContributions">
     <div class="employerContributionsTitle">Employer Contributions</div>
     <div class="employerContributionRows">
       ${model.contributions.map((contribution) => `<div class="employerContributionRow"><span>${escapeHtml(contribution.label)}</span><b>R ${payslipAmount(contribution.cents / 100)}</b></div>`).join("")}
@@ -3500,7 +3501,7 @@ function buildPayslipPage(company, row, period) {
     : `<div class="logoFallback">${escapeHtml(company.name || "Company")}</div>`;
 
   return `<div class="page">
-      <section class="hero">
+      <section class="hero payslipDivider">
         <div class="logoBox">${logoHtml}</div>
         <div class="companyBlock">
           <div class="companyName">${escapeHtml(String(company.name || "Company"))}</div>
@@ -3624,7 +3625,8 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
     .payrollSummaryTable td:nth-child(n+3),.payrollSummaryTable th:nth-child(n+3){text-align:right}
     .payrollSummaryTable thead{display:table-header-group}.payrollSummaryTable tr{break-inside:avoid}
     .payrollSummaryTable .payrollSummaryTotal td{background:var(--ink);color:white;font-weight:bold;print-color-adjust:exact;-webkit-print-color-adjust:exact}
-    .hero{display:grid;grid-template-columns:38mm 1fr 42mm;gap:12mm;align-items:center;border-bottom:2px solid var(--ink);padding-bottom:9mm;margin-bottom:8mm}
+    .hero{display:grid;grid-template-columns:38mm 1fr 42mm;gap:12mm;align-items:center;padding-bottom:9mm;margin-bottom:8mm}
+    .payslipDivider{border-bottom:2px solid var(--ink)}
     .logoBox{width:35mm;height:26mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .logoImg{max-width:100%;max-height:100%;object-fit:contain}
     .logoFallback{font-weight:900;text-align:center;border:1px solid var(--line);padding:8px;border-radius:5px}
@@ -3659,6 +3661,7 @@ function buildPayslipDocument(company, rowsOrRow, options = {}) {
     .summaryRow span,.summaryRow b{padding:8px 11px}
     .summaryRow span{font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
     .summaryRow b{text-align:right;font-size:13px}
+    .employerContributionsDivider{margin-top:6mm}
     .employerContributions{margin-top:6mm;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;break-inside:avoid}
     .employerContributionsTitle{padding:8px 11px;background:var(--soft);border-bottom:1px solid var(--line);font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.10em}
     .employerContributionRow{display:grid;grid-template-columns:1fr 42mm;align-items:center;border-bottom:1px solid #eee8dd}
