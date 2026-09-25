@@ -17,6 +17,9 @@ const root = fs.mkdtempSync(path.resolve('tmp/payroll-isolated-'));
 const dataDir = path.join(root, 'data');
 const port = 54398;
 const c1 = '10000000-0000-0000-0000-000000000001', c2 = '10000000-0000-0000-0000-000000000002';
+const c3 = '10000000-0000-0000-0000-000000000003', c4 = '10000000-0000-0000-0000-000000000004';
+const c5 = '10000000-0000-0000-0000-000000000005', c6 = '10000000-0000-0000-0000-000000000006';
+const c7 = '10000000-0000-0000-0000-000000000007';
 const owner = '20000000-0000-0000-0000-000000000001', employee = '20000000-0000-0000-0000-000000000002';
 let admin, started = false, passed = 0;
 const connections = [];
@@ -73,15 +76,27 @@ async function main() {
     grant all on all tables in schema public to authenticated;
   `);
 
-  for(const c of [c1,c2]) {
+  for(const c of [c1,c2,c3,c4,c5,c6,c7]) {
     await admin.query('insert into companies(id,name) values($1,$2)',[c,'Synthetic cutoff only']);
     await admin.query('insert into company_payroll_rules(company_id) values($1)',[c]);
     for(const e of ['E1','E2']) await admin.query('insert into employees(company_id,employee_id,full_name,rate) values($1,$2,$2,10000)',[c,e]);
   }
   await admin.query('insert into auth.users values($1),($2)',[owner,employee]);
-  for(const c of [c1,c2]) await admin.query("insert into company_users(company_id,user_id,role) values($1,$2,'owner')",[c,owner]);
+  for(const c of [c1,c2,c3,c4,c5,c6,c7]) await admin.query("insert into company_users(company_id,user_id,role) values($1,$2,'owner')",[c,owner]);
   await admin.query(fs.readFileSync('supabase/migrations/20260917100000_payroll_finalisation.sql','utf8'));
   await admin.query(fs.readFileSync('supabase/migrations/20260919120000_payroll_ytd_explicit_cutoff.sql','utf8'));
+  const legacyNoopRequest=id(), correctedUpRequest=id(), correctedDownRequest=id(), genuineRequest=id();
+  await admin.query(`insert into payroll_financial_events(company_id,employee_id,tax_year_start,request_id,kind,value_type,previous_value,target_value,delta,applies_after,ytd_as_at,reason,actor,created_at)
+    values
+      ($1,'E1','2026-03-01',$2,'ytd_adjustment','paye',0,0,0,'2026-09-10','2026-09-10','legacy zero PAYE',$6,'2026-09-10 08:00+00'),
+      ($1,'E1','2026-03-01',$2,'ytd_adjustment','uif',0,0,0,'2026-09-10','2026-09-10','legacy zero UIF',$6,'2026-09-10 08:00+00'),
+      ($3,'E1','2026-03-01',$4,'ytd_adjustment','paye',0,1000,1000,'2026-09-21','2026-09-21','incorrect target',$6,'2026-09-21 08:00+00'),
+      ($3,'E1','2026-03-01',$5,'ytd_adjustment','paye',1000,0,-1000,'2026-09-21','2026-09-21','corrected target',$6,'2026-09-21 09:00+00'),
+      ($7,'E1','2026-03-01',$8,'ytd_adjustment','paye',0,1000,1000,'2026-09-21','2026-09-21','genuine target',$6,'2026-09-21 08:00+00')`,
+    [c4,legacyNoopRequest,c5,correctedUpRequest,correctedDownRequest,owner,c7,genuineRequest]);
+  await admin.query(`insert into employee_payroll_ytd_opening_balances(company_id,employee_id,tax_year_start,as_of_date,completed_periods,gross_remuneration,retirement_fund_contributions,paye_deducted,employee_uif)
+    values($1,'E1','2026-03-01','2026-09-21',0,0,0,0,0)`,[c6]);
+  await admin.query(fs.readFileSync('supabase/migrations/20260925130000_payroll_effective_ytd_cutoff.sql','utf8'));
   await admin.query('update company_payroll_rules set payroll_history_enabled=true');
   const a=await user();
   const details=(c,e)=>({company_id:c,employee_id:e,full_name:e,pay_type:'monthly',pay_cycle:'monthly',rate:10000,active:true});
@@ -92,6 +107,20 @@ async function main() {
   async function finalise(c,s,t){const p=await payload(a,c,s,t);p.company.name='Synthetic cutoff only';return trusted(a,c,id(),p);}
   async function balances(c,asAt){return call(a,'get_employee_payroll_ytd_at',[c,'E1','2026-03-01',asAt]);}
   function amounts(h,paye,uif){assert.equal(Number(h.paye),paye);assert.equal(Number(h.uif),uif);}
+
+  amounts(await balances(c3,'2026-09-10'),0,0);
+  await edit(c3,'E1','2026-09-10',{paye:'0.00',uif:'0.00'});
+  assert.equal((await admin.query("select count(*)::int n from payroll_financial_events where company_id=$1",[c3])).rows[0].n,0);
+  amounts(await call(a,'get_employee_payroll_ytd_at',[c4,'E1','2026-03-01','2026-09-10']),0,0);
+  amounts(await call(a,'get_employee_payroll_ytd_at',[c5,'E1','2026-03-01','2026-09-21']),0,0);
+  await finalise(c3,'2026-09-10','2026-09-23');
+  await finalise(c4,'2026-09-10','2026-09-23');
+  await finalise(c5,'2026-09-10','2026-09-23');
+  await fails(finalise(c6,'2026-09-10','2026-09-23'),/covered by an accountant/);
+  await fails(finalise(c7,'2026-09-10','2026-09-23'),/covered by an accountant/);
+  assert.equal((await admin.query("select count(*)::int n from payroll_runs where company_id in ($1,$2)",[c6,c7])).rows[0].n,0);
+  ok('zero/default and corrected-to-zero YTD do not create or enforce a cutoff; genuine opening and non-zero target remain protected');
+
   await finalise(c1,'2026-08-01','2026-08-31');
   await edit(c1,'E1','2026-08-31');
   amounts(await balances(c1,'2026-08-31'),12500,1600);

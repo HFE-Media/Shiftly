@@ -196,15 +196,15 @@ async function payrollHistorySaveEmployee(payload, isEditing) {
     const rules = activePayrollRules(); const targets = { reason: $('employeeYtdReason').value.trim() };
     if (rules.calculate_paye) {
       const value = payrollYtdInputDecimal($('employeeYtdPaye').value);
-      if (value !== ph.decimal(edit.data.paye) || !edit.data.paye_supplied || edit.cutoffChosen) targets.paye = value;
+      if (value !== ph.decimal(edit.data.paye) || (edit.cutoffChosen && value !== '0.00')) targets.paye = value;
     }
     if (rules.calculate_uif) {
       const value = payrollYtdInputDecimal($('employeeYtdUif').value);
-      if (value !== ph.decimal(edit.data.uif) || !edit.data.uif_supplied || edit.cutoffChosen) targets.uif = value;
+      if (value !== ph.decimal(edit.data.uif) || (edit.cutoffChosen && value !== '0.00')) targets.uif = value;
     }
     if (rules.calculate_sdl) {
       const value = payrollYtdInputDecimal($('employeeYtdSdl').value);
-      if (value !== ph.decimal(edit.data.sdl || 0) || !edit.data.sdl_supplied || edit.cutoffChosen) targets.sdl = value;
+      if (value !== ph.decimal(edit.data.sdl || 0) || (edit.cutoffChosen && value !== '0.00')) targets.sdl = value;
     }
     if ('paye' in targets || 'uif' in targets || 'sdl' in targets) targets.as_at = edit.cutoff;
     await payrollHistoryRpc('save_employee_with_ytd', { c: payload.company_id, e: payload.employee_id, is_new: !isEditing,

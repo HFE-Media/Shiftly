@@ -62,3 +62,11 @@ test('explicit YTD date reloads cutoff ledger, preserves typed accountant values
   assert.match(el('employeeYtdMessage').textContent,/tax year/);
   assert((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error);
 });
+
+test('unchanged unsupplied zero YTD does not create a synthetic cutoff target',async()=>{
+  const {c,calls,data}=fixture();
+  Object.assign(data,{paye:'0.00',uif:'0.00',sdl:'0.00',paye_supplied:false,uif_supplied:false,sdl_supplied:false});
+  await c.payrollHistoryEmployeeForm(true,'2026-09-10');
+  assert.equal((await c.payrollHistorySaveEmployee({company_id:'synthetic',employee_id:'E1'},true)).error,null);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1).args.targets)),{reason:''});
+});

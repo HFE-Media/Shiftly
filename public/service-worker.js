@@ -1,4 +1,4 @@
-const CACHE_NAME = "shiftly-v252"; // Phase 1-3 manual QA cleanup
+const CACHE_NAME = "shiftly-v253"; // Effective YTD cutoff fix
 
 const ASSETS = [
   "/",
@@ -16,7 +16,7 @@ const ASSETS = [
   "/app.js",
   "/app.js?v=204",
   "/payroll-reports.js?v=2",
-  "/payroll-history-ui.js?v=9",
+  "/payroll-history-ui.js?v=10",
   "/jobs.js?v=27",
   "/jobs.css?v=29",
   "/jobs-data.js?v=6",
