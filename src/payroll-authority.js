@@ -44,6 +44,14 @@
     return {id:row.id,circumstance:row.circumstance,effective_from:row.effective_from,
       effective_to:row.effective_to||null,evidence_reference:row.evidence_reference||null,source:'employee_record'};
   }
+  function employeeAppliesToPeriod(row,selection){
+    const employmentDate=String(row.employment_date||'');
+    if(!employmentDate||employmentDate<=selection.start)return true;
+    if(employmentDate>selection.end)return false;
+    return cents(row.gross)!==0||Number(row.hours||0)!==0||Number(row.exceptionCount||0)>0||
+      (row.adjustments||[]).some(item=>cents(item.amount)!==0||Number(item.hours||0)!==0)||
+      (row.deductions||[]).some(item=>cents(item.amount)!==0);
+  }
   function calculateSdl(input,selection,rows,rules){
     const enabled=rules.calculate_sdl===true;
     const config=input.sdl?.configuration||null;
@@ -58,7 +66,10 @@
     if(enabled&&fixedKeys.some(key=>!fixed[key]||fixed[key].sdl_treatment!=='included_remuneration'))
       fail('Authoritative SDL remuneration classifications are unavailable for this payroll period.');
     return rows.map(row=>{
-      const circumstance=employeeSdlCircumstance(input,row.employee_id,selection);
+      const applies=employeeAppliesToPeriod(row,selection);
+      const circumstance=applies
+        ?employeeSdlCircumstance(input,row.employee_id,selection)
+        :{circumstance:'standard',effective_from:null,effective_to:null,evidence_reference:null,source:'not_applicable'};
       if(enabled&&Number(row.breakdown?.allowancePay||0)>0)
         fail('Generic Allowance is not authoritatively classified for SDL. Replace it with a supported payroll item before finalising.');
       if(enabled){
@@ -71,7 +82,9 @@
         if(unresolvedDeduction)fail(`${classifications.get(String(unresolvedDeduction.payroll_item_classification_id||''))?.display_name||unresolvedDeduction.description||'This payroll deduction'} needs statutory evidence or calculation support before SDL can be finalised.`);
       }
       const allowable=(row.deductions||[]).filter(item=>item.payroll_item_classification?.calculation_status==='payroll_active'&&item.payroll_item_classification?.sdl_treatment==='allowable_deduction').reduce((sum,item)=>sum+cents(item.amount),0);
-      const base=enabled&&circumstance.circumstance!=='section_18_3_learner'?Math.max(0,cents(row.gross)-allowable):0;
+      if(!applies&&Math.max(0,cents(row.gross)-allowable)!==0)
+        fail('Payroll applicability conflicts with SDL-liable remuneration. Refresh payroll before continuing.');
+      const base=enabled&&applies&&circumstance.circumstance!=='section_18_3_learner'?Math.max(0,cents(row.gross)-allowable):0;
       const sdl=enabled?Math.round(base*Number(rate.rate)):0;
       const used=[...fixedKeys.map(key=>fixed[key]?.id),...(row.deductions||[]).map(item=>item.payroll_item_classification_id)].filter(Boolean);
       return {...row,sdl_leviable_remuneration:amount(base),sdl_amount:amount(sdl),sdl_rate:enabled?rate.rate:0,

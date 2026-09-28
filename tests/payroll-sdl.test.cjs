@@ -22,6 +22,12 @@ function input(overrides={}){
     history:{revision:'fixture',employees:[{employee_id:'E1'}]},...overrides};
 }
 const selection={start:'2026-09-01',end:'2026-09-30',levyWeeks:null};
+function assertFinalisationParity(row){
+  const allowable=(row.document_row.deductions||[]).filter(item=>item.payroll_item_classification?.calculation_status==='payroll_active'&&item.payroll_item_classification?.sdl_treatment==='allowable_deduction').reduce((sum,item)=>sum+Number(item.amount||0),0);
+  const expected=Math.max(0,Number(row.document_row.gross||0)-allowable).toFixed(2);
+  assert.equal(row.sdl_leviable_remuneration,expected);
+  assert.equal(row.sdl_amount,(Number(expected)*0.01).toFixed(2));
+}
 
 test('authoritative SDL is 1% of leviable remuneration and does not reduce employee net',()=>{
   const result=Authority.calculate(input(),selection).rows[0];
@@ -67,6 +73,74 @@ test('unresolved allowance and mid-period circumstance changes fail closed',()=>
   const split=input();
   split.sdl.employee_circumstances=[{id:'standard-1',employee_id:'E1',circumstance:'standard',effective_from:'2026-03-01',effective_to:'2026-09-15'}];
   assert.throws(()=>Authority.calculate(split,selection),/change inside this payroll period/i);
+});
+
+test('a later non-participating hire does not create an SDL boundary for an earlier period',()=>{
+  const data=input({employees:[
+    {employee_id:'E1',full_name:'Employee One',active:true,rate:10000,pay_type:'monthly',pay_cycle:'monthly',employment_date:'2026-03-01'},
+    {employee_id:'E2',full_name:'Later Hire',active:true,rate:100,pay_type:'hourly',pay_cycle:'monthly',employment_date:'2026-09-28'}
+  ],history:{revision:'fixture',employees:[{employee_id:'E1'},{employee_id:'E2'}]}});
+  data.sdl.employee_circumstances=[{id:'later-standard',employee_id:'E2',circumstance:'standard',effective_from:'2026-09-28',effective_to:null}];
+  const result=Authority.calculate(data,selection);
+  const later=result.rows.find(row=>row.employee_id==='E2');
+  assert.equal(later.document_row.gross,0,'pre-employment public holiday must not generate remuneration');
+  assert.equal(later.sdl_circumstance.source,'not_applicable');
+  assertFinalisationParity(later);
+});
+
+test('an applicable employee still enforces the SDL boundary and accepts its exact effective date',()=>{
+  const crossing=input();
+  crossing.employees[0].employment_date='2026-03-01';
+  crossing.sdl.employee_circumstances=[{id:'changed-standard',employee_id:'E1',circumstance:'standard',effective_from:'2026-09-28',effective_to:null}];
+  assert.throws(()=>Authority.calculate(crossing,selection),/change inside this payroll period/i);
+  const laterParticipant=input({employees:[{employee_id:'E1',full_name:'Employee One',active:true,rate:100,pay_type:'hourly',pay_cycle:'monthly',employment_date:'2026-09-28'}],
+    events:[{employee_id:'E1',action:'IN',result:'OK',created_at:'2026-09-28T07:00:00+02:00'},{employee_id:'E1',action:'OUT',result:'OK',created_at:'2026-09-28T16:00:00+02:00'}]});
+  laterParticipant.sdl.employee_circumstances=structuredClone(crossing.sdl.employee_circumstances);
+  assert.throws(()=>Authority.calculate(laterParticipant,selection),/change inside this payroll period/i);
+  const boundary={start:'2026-09-28',end:'2026-09-30',levyWeeks:null};
+  const result=Authority.calculate(crossing,boundary).rows[0];
+  assert.equal(result.sdl_circumstance.id,'changed-standard');
+  assertFinalisationParity(result);
+});
+
+test('employees starting after the period receive no monthly, daily or hourly remuneration',()=>{
+  for(const payType of ['monthly','daily','hourly']){
+    const data=input({employees:[{employee_id:'E1',full_name:'Future Employee',active:true,rate:10000,pay_type:payType,pay_cycle:'monthly',employment_date:'2026-10-01'}]});
+    assert.equal(Authority.calculate(data,selection).rows.length,0,payType);
+  }
+});
+
+test('inside-period employment excludes earlier work and holiday pay without inventing salary proration',()=>{
+  const events=[
+    {employee_id:'E1',action:'IN',result:'OK',created_at:'2026-09-25T07:00:00+02:00'},
+    {employee_id:'E1',action:'OUT',result:'OK',created_at:'2026-09-25T15:00:00+02:00'},
+    {employee_id:'E1',action:'IN',result:'OK',created_at:'2026-09-28T07:00:00+02:00'},
+    {employee_id:'E1',action:'OUT',result:'OK',created_at:'2026-09-28T15:00:00+02:00'}
+  ];
+  for(const [payType,rate,gross] of [['hourly',100,800],['daily',100,100]]){
+    const data=input({employees:[{employee_id:'E1',full_name:'Later Hire',active:true,rate,pay_type:payType,pay_cycle:'monthly',employment_date:'2026-09-28'}],events});
+    data.sdl.employee_circumstances=[];
+    const row=Authority.calculate(data,selection).rows[0];
+    assert.equal(row.document_row.gross,gross,payType);
+    assert.equal(row.document_row.breakdown.holidayTopupHours,0,payType);
+    assertFinalisationParity(row);
+  }
+  const monthly=input({employees:[{employee_id:'E1',full_name:'Later Hire',active:true,rate:10000,pay_type:'monthly',pay_cycle:'monthly',employment_date:'2026-09-28'}]});
+  monthly.sdl.employee_circumstances=[];
+  const row=Authority.calculate(monthly,selection).rows[0];
+  assert.equal(row.document_row.gross,10000,'existing monthly non-proration semantics are preserved');
+  assertFinalisationParity(row);
+});
+
+test('later-hire paid leave, adjustment and deduction participation retain the SDL split guard',()=>{
+  const later=(overrides={})=>{
+    const data=input({employees:[{employee_id:'E1',full_name:'Later Hire',active:true,rate:100,pay_type:'hourly',pay_cycle:'monthly',employment_date:'2026-09-28'}],...overrides});
+    data.sdl.employee_circumstances=[{id:'later-standard',employee_id:'E1',circumstance:'standard',effective_from:'2026-09-28',effective_to:null}];
+    return data;
+  };
+  assert.throws(()=>Authority.calculate(later({adjustments:[{employee_id:'E1',adjustment_type:'paid_leave',description:'Paid Leave',hours:8,amount:800,active:true}]}),selection),/change inside this payroll period/i);
+  assert.throws(()=>Authority.calculate(later({adjustments:[{employee_id:'E1',adjustment_type:'bonus',description:'Bonus',amount:500,active:true}]}),selection),/change inside this payroll period/i);
+  assert.throws(()=>Authority.calculate(later({deductions:[{employee_id:'E1',description:'Loan',amount:100,active:true}]}),selection),/change inside this payroll period/i);
 });
 
 test('net-only Tools/PPE, Fine and Loan do not reduce SDL base',()=>{

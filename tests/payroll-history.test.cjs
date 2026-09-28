@@ -184,9 +184,27 @@ test('UI draft, finalisation and read-only reprint contract',async()=>{
   assert.equal(document.getElementById('payrollFinalStatus').textContent,'Finalised');
   assert.equal(c.payrollSummaryRun.rows[0]._payrollRules.calculate_paye,true);
   rules.calculate_uif=false; rules.calculate_sdl=false; rows[0].employer_uif=0; rows[0].sdl_amount=0;
+  c.payrollAuthority=async()=>{throw Error('later employee SDL boundary must not recalculate a finalised payroll');};
   await c.payrollHistoryLoadFinal(company,'2026-09-01','2026-09-15',1);
   assert.equal(c.payrollSummaryRun.rows[0].employer_uif,1);
   assert.equal(c.payrollSummaryRun.rows[0].sdl_amount,1);
   assert.equal(c.payrollSummaryRun.rows[0]._payrollRules.calculate_uif,true);
   assert.equal(c.payrollSummaryRun.rows[0]._payrollRules.calculate_sdl,true);
+});
+test('official employee payslip reprint passes the immutable saved snapshot to the document builder',async()=>{
+  const company={id:'fixture',name:'Fixture'};
+  const saved={company:{id:'fixture',name:'Frozen Fixture'},rules:{calculate_sdl:true},document_row:{employee_id:'E1',gross:100,sdl_amount:1}};
+  let rendered=null,written='';
+  const popup={document:{open(){},write(value){written=value;},close(){}},close(){}};
+  const c={window:{open:()=>popup},currentCompany:()=>company,employeeDashboardPayslipRow:{employee_id:'E1',gross:999,sdl_amount:0},
+    el:{employeePeriodStart:{value:'2026-09-01'},employeePeriodEnd:{value:'2026-09-15'}},jobsContextVersion:1,
+    payrollHistoryEnabled:()=>true,payrollHistoryRpc:async()=>saved,alert:message=>{throw Error(message);},
+    buildPayslipDocument:(frozenCompany,row,period)=>{rendered={frozenCompany,row,period};return 'immutable-snapshot-html';}};
+  vm.createContext(c);vm.runInContext(fn(source,'generateEmployeeDashboardPayslip'),c);
+  await c.generateEmployeeDashboardPayslip();
+  assert.equal(rendered.frozenCompany.name,'Frozen Fixture');
+  assert.equal(rendered.row.gross,100);
+  assert.equal(rendered.row.sdl_amount,1);
+  assert.equal(rendered.row._payrollRules.calculate_sdl,true);
+  assert.equal(written,'immutable-snapshot-html');
 });

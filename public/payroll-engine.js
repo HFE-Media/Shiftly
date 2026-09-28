@@ -140,6 +140,7 @@ const el={payrollStartDate:{value:context.start||''},payrollEndDate:{value:conte
 const payrollTaxYearStart=value=>{const [y,m]=String(value).split('-').map(Number);return (m>=3?y:y-1)+'-03-01'};
 function calculatePayroll(events, employees, rulesInput = activePayrollRules()) {
   const rules = normalisePayrollRules(rulesInput);
+  const periodEnd = /^\d{4}-\d{2}-\d{2}$/.test(String(context.end || "")) ? String(context.end) : "";
   const employeeMap = new Map((employees || []).map((employee) => [String(employee.employee_id), employee]));
   const eventGroups = new Map();
 
@@ -160,10 +161,19 @@ function calculatePayroll(events, employees, rulesInput = activePayrollRules()) 
     if (!employeeId) continue;
     const employee = employeeMap.get(employeeId) || {};
     if (employee.active === false) continue;
+    const employmentDate = /^\d{4}-\d{2}-\d{2}$/.test(String(employee.employment_date || ""))
+      ? String(employee.employment_date)
+      : "";
+    if (periodEnd && employmentDate && employmentDate > periodEnd) continue;
 
     const employeeEvents = (eventGroups.get(employeeId) || [])
       .filter((event) => String(event.result || "").toUpperCase() === "OK")
       .filter((event) => ["IN", "OUT"].includes(String(event.action || "").toUpperCase()))
+      .filter((event) => {
+        if (!employmentDate) return true;
+        const time = payrollEventTime(event, rules);
+        return !Number.isFinite(time.getTime()) || dateKey(time) >= employmentDate;
+      })
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
     const rate = Number(employee.rate || 0);
@@ -179,7 +189,7 @@ function calculatePayroll(events, employees, rulesInput = activePayrollRules()) 
       employee_id: employeeId,
       employee_name: employee.full_name || employeeEvents[0]?.employee_name || "",
       id_number: employee.id_number || "",
-      employment_date: employee.employment_date || "",
+      employment_date: employmentDate,
       pay_type: payType,
       pay_cycle: payCycle,
       nbcei_designation_code: normaliseNbceiDesignationCode(employee.nbcei_designation_code),
@@ -278,6 +288,9 @@ function buildPayrollBreakdown(employee, employeeEvents, rulesInput = activePayr
   const isMonthly = payType === "monthly";
   const payCycle = String(employee.pay_cycle || "fortnightly").toLowerCase();
   const rate = Number(employee.rate || 0);
+  const employmentDate = /^\d{4}-\d{2}-\d{2}$/.test(String(employee.employment_date || ""))
+    ? String(employee.employment_date)
+    : "";
   const safeRate = Number.isFinite(rate) ? rate : 0;
   const effectiveHourlyRate = payrollHourlyRateForPayType(payType, safeRate, rules);
   const breakdown = {
@@ -440,6 +453,7 @@ function buildPayrollBreakdown(employee, employeeEvents, rulesInput = activePayr
   if (!isMonthly && rules.public_holiday_rule === "ot2_with_topup") {
     for (const holiday of datesInRange(el.payrollStartDate.value, el.payrollEndDate.value)) {
       if (!isPublicHoliday(holiday)) continue;
+      if (employmentDate && dateKey(holiday) < employmentDate) continue;
       if (!shouldApplyPublicHolidayTopup(holiday)) continue;
       const worked = publicHolidayWorked.get(dateKey(holiday)) || 0;
       const topup = Math.max(0, rules.public_holiday_standard_hours - worked);
