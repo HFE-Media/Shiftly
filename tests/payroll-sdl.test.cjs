@@ -46,6 +46,62 @@ test('SDL remains off by default and reports visibility is still PAYE/UIF-only',
   assert.equal(reports.reportsApplicable({calculate_paye:false,calculate_uif:false,calculate_sdl:true}),false);
 });
 
+test('SDL off ignores single and multiple employee circumstance boundaries without changing PAYE or UIF',()=>{
+  const baseline=input({
+    rules:{calculate_paye:true,calculate_uif:true,calculate_sdl:false},
+    uif_month:{month:'2026-09-01',employees:[{employee_id:'E1',ambiguous:false,liable:0,employee:0,employer:0}]},
+    sdl:{configuration:null,rate:null,employee_circumstances:[]}
+  });
+  const expected=Authority.calculate(baseline,selection).rows[0];
+  const single=structuredClone(baseline);
+  single.sdl.employee_circumstances=[
+    {id:'changed-standard',employee_id:'E1',circumstance:'standard',effective_from:'2026-09-15',effective_to:null}
+  ];
+  const singleResult=Authority.calculate(single,selection).rows[0];
+  assert.equal(singleResult.sdl_amount,'0.00');
+  assert.equal(singleResult.sdl_circumstance.source,'not_applicable');
+  const crossing=structuredClone(baseline);
+  crossing.sdl.employee_circumstances=[
+    {id:'standard-1',employee_id:'E1',circumstance:'standard',effective_from:'2026-03-01',effective_to:'2026-09-15'},
+    {id:'learner-1',employee_id:'E1',circumstance:'section_18_3_learner',effective_from:'2026-09-15',effective_to:null,evidence_reference:''}
+  ];
+  const actual=Authority.calculate(crossing,selection).rows[0];
+  assert.equal(actual.sdl_amount,'0.00');
+  assert.equal(actual.sdl_leviable_remuneration,'0.00');
+  assert.equal(actual.sdl_circumstance.source,'not_applicable');
+  assert.equal(actual.paye_deducted,expected.paye_deducted);
+  assert.equal(actual.employee_uif,expected.employee_uif);
+  assert.equal(actual.employer_uif,expected.employer_uif);
+  assert.deepEqual(actual.document_row.deductions,expected.document_row.deductions);
+});
+
+test('SDL-off circumstance boundaries do not block trusted preview or finalisation recalculation',async()=>{
+  const companyId='10000000-0000-0000-0000-000000000001';
+  const data=input({
+    rules:{calculate_paye:false,calculate_uif:false,calculate_sdl:false},
+    sdl:{configuration:null,rate:null,employee_circumstances:[
+      {id:'standard-1',employee_id:'E1',circumstance:'standard',effective_from:'2026-03-01',effective_to:'2026-09-15'},
+      {id:'standard-2',employee_id:'E1',circumstance:'standard',effective_from:'2026-09-15',effective_to:null}
+    ]}
+  });
+  let committed=null;
+  const execute=Authority.create({
+    secret:'synthetic-signing-secret-at-least-32-characters',
+    user:async()=>({id:'20000000-0000-0000-0000-000000000001'}),
+    inputs:async()=>structuredClone(data),
+    logo:async()=>'',
+    request:async()=>null,
+    commit:async(_actor,_company,_request,payload)=>{committed=payload;return '30000000-0000-0000-0000-000000000001';}
+  });
+  const preview=await execute('synthetic',{action:'preview',c:companyId,start:selection.start,end:selection.end,levyWeeks:null});
+  assert.equal(preview.rows[0].sdl_amount,0);
+  const result=await execute('synthetic',{action:'finalise',c:companyId,request:'40000000-0000-0000-0000-000000000001',token:preview.token});
+  assert.equal(result.replayed,false);
+  assert.equal(committed.rows[0].sdl_amount,'0.00');
+  assert.equal(committed.rows[0].sdl_leviable_remuneration,'0.00');
+  assert.match(migration,/if not new\.sdl_enabled then[\s\S]*?return new;/);
+});
+
 test('activated retirement contribution reduces PAYE/SDL base and remains an employee deduction',()=>{
   const retirement=definition('provident_fund_contribution','employee_provident_fund_contribution','allowable_deduction','payroll_active');
   const data=input({classifications:[...fixed,retirement],deductions:[{employee_id:'E1',description:'Provident Fund Contribution',amount:500,active:true,
@@ -89,6 +145,11 @@ test('a later non-participating hire does not create an SDL boundary for an earl
 });
 
 test('an applicable employee still enforces the SDL boundary and accepts its exact effective date',()=>{
+  const spanning=input();
+  spanning.sdl.employee_circumstances=[{id:'existing-standard',employee_id:'E1',circumstance:'standard',effective_from:'2026-03-01',effective_to:null}];
+  const spanningResult=Authority.calculate(spanning,selection).rows[0];
+  assert.equal(spanningResult.sdl_circumstance.id,'existing-standard');
+  assertFinalisationParity(spanningResult);
   const crossing=input();
   crossing.employees[0].employment_date='2026-03-01';
   crossing.sdl.employee_circumstances=[{id:'changed-standard',employee_id:'E1',circumstance:'standard',effective_from:'2026-09-28',effective_to:null}];

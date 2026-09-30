@@ -67,7 +67,7 @@
       fail('Authoritative SDL remuneration classifications are unavailable for this payroll period.');
     return rows.map(row=>{
       const applies=employeeAppliesToPeriod(row,selection);
-      const circumstance=applies
+      const circumstance=enabled&&applies
         ?employeeSdlCircumstance(input,row.employee_id,selection)
         :{circumstance:'standard',effective_from:null,effective_to:null,evidence_reference:null,source:'not_applicable'};
       if(enabled&&Number(row.breakdown?.allowancePay||0)>0)
